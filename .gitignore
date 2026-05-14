@@ -1,0 +1,14 @@
+.DS_Store
+.Rhistory
+.DS_Store
+*_cache/
+*_files/
+.Rproj.user/
+.Rhistory
+.RData
+.Ruserdata
+# macOS
+.DS_Store.RData
+.RData
+.RData
+.Rhistory

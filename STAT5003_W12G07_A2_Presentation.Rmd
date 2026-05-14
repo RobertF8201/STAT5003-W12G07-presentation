@@ -752,21 +752,12 @@ kable(tuning_tbl, booktabs = TRUE) %>%
 ```{r slide-evaluation}
 eval_tbl <- tibble::tibble(
   Model          = c("Logistic Regression (tuned)", "Decision Tree (baseline)", "Random Forest (tuned)",
-<<<<<<< HEAD
-                     "XGBoost", "KNN (baseline)", "Naive Bayes (tuned)"),
-  `Macro-F1`     = c("0.442", "0.429", "0.619", "TODO", "0.551", "0.245"),
-  `Fatal Recall` = c("0.761", "0.729", "0.367",     "TODO", "0.356", "0.782"),
-  `Weighted F1`  = c("0.591", "0.584", "0.736",     "TODO", "0.732", "0.253"),
-  `Kappa`        = c("0.272", "0.243", "0.460",     "TODO", "0.424", "0.112"),
-  `Meets Fatal Recall >= 0.50` = c("Yes", "Yes", "No", "TODO", "No", "Yes")
-=======
                      "XGBoost", "KNN (baseline)", "Naive Bayes (baseline)"),
   `Macro-F1`     = c("0.442", "0.429", "0.619", "0.266", "0.551", "0.205"),
   `Fatal Recall` = c("0.761", "0.729", "0.367",     "0.33", "0.356", "0.856"),
   `Weighted F1`  = c("0.591", "0.584", "0.736",     "0.399", "0.732", "0.188"),
   `Kappa`        = c("0.272", "0.243", "0.460",     "0.003", "0.424", "0.086"),
   `Meets Fatal Recall >= 0.50` = c("Yes", "Yes", "No", "No", "No", "Yes")
->>>>>>> d5ee7a2 (model evaluation xgboost)
 )
 
 kable(eval_tbl, booktabs = TRUE, escape = FALSE) %>%

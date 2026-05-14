@@ -17,6 +17,7 @@ library(readr)
 library(forcats)
 library(scales)
 library(knitr)
+library(kableExtra)
 library(caret)
 library(nnet)
 library(rpart)
@@ -457,7 +458,7 @@ print(p_lr_coef)
 ggsave("plots/5_1_logistic_regression_coefficients.png", p_lr_coef, width = 7, height = 5, dpi = 150)
 ```
 
-The baseline Logistic Regression achieved a Macro-F1 of 0.4395, a Weighted F1 of 0.5914, and Cohen's Kappa of 0.2724 on the test set. Most importantly, the Fatal Recall reached 0.7739, safely exceeding the strict 0.50 target threshold. This high recall indicates that the in-fold SMOTE strategy effectively forced the model to heavily penalize minority-class misclassifications, capturing the vast majority of fatal incidents at the expected cost of an increased false-positive rate (Precision-Recall trade-off). Analysis of the largest standardized coefficients reveals that the presence of Pedestrians, Night-time conditions, and Country non-urban environments exert the strongest positive influence on predicting a Fatal outcome, aligning perfectly with the clinical intuition that vulnerable road users and poor visibility in high-speed zones drastically elevate crash severity.
+The baseline Logistic Regression achieved a Macro-F1 of 0.4446, a Weighted F1 of 0.5987, and Cohen's Kappa of 0.2821 on the test set. Most importantly, the Fatal Recall reached 0.7660, safely exceeding the strict 0.50 target threshold. This high recall indicates that the in-fold SMOTE strategy effectively forced the model to heavily penalize minority-class misclassifications, capturing the vast majority of fatal incidents at the expected cost of an increased false-positive rate (Precision-Recall trade-off). Analysis of the largest standardized coefficients reveals that the presence of Pedestrians, Night-time conditions, and Country non-urban environments exert the strongest positive influence on predicting a Fatal outcome, aligning perfectly with the clinical intuition that vulnerable road users and poor visibility in high-speed zones drastically elevate crash severity.
 
 #### 5.2 Decision Tree
 
@@ -561,7 +562,7 @@ print(p_dt_cm)
 ggsave("plots/5_2_decision_tree_confusion_matrix.png", p_dt_cm, width = 7, height = 5, dpi = 150)
 ```
 
-The Decision Tree achieved a Macro-F1 of 0.4290, a Weighted F1 of 0.5837, and a Kappa of 0.2430. Similar to the logistic baseline, the model successfully satisfied the primary safety constraint, yielding a strong Fatal Recall of 0.7287. The tree's hierarchical structure acts as an intrinsic feature selector: the plot reveals that Street lighting, Distance, and the involvement of vulnerable units (Motorcycles and Pedestrians) dictate the primary root and child splits. This explicit segmentation confirms that severe crashes are not randomly distributed but are heavily concentrated in specific structural scenarios - namely, unprotected traffic units navigating poorly lit or remote environmental contexts.
+The Decision Tree achieved a Macro-F1 of 0.4005, a Weighted F1 of 0.5349, and a Kappa of 0.2092. Similar to the logistic baseline, the model successfully satisfied the primary safety constraint, yielding a strong Fatal Recall of 0.7660. The tree's hierarchical structure acts as an intrinsic feature selector: the plot reveals that Street lighting, Distance, and the involvement of vulnerable units (Motorcycles and Pedestrians) dictate the primary root and child splits. This explicit segmentation confirms that severe crashes are not randomly distributed but are heavily concentrated in specific structural scenarios - namely, unprotected traffic units navigating poorly lit or remote environmental contexts.
 
 #### 5.3 Random Forest
 
@@ -642,7 +643,7 @@ print(p_rf_varimp)
 ggsave("plots/5_3_random_forest_variable_importance_top15.png", p_rf_varimp, width = 7, height = 5, dpi = 150)
 ```
 
-The Random Forest achieved an OOB error rate of 26.92%, Macro-F1 of 0.6027, Weighted F1 of 0.7363, and Cohen's Kappa of 0.4603 on the test set. Fatal Recall was 0.3085: the model correctly identified 116 of 376 fatal crashes, with 237 misclassified as Injury and 23 as Non-casualty. The OOB error is higher than would be observed on the original imbalanced dataset because the balanced training set (`df_train_bal`) shifts the prior — the OOB samples now contain a higher proportion of Fatal and Injury observations relative to what the full dataset would produce. Despite not yet meeting the Fatal Recall threshold of 0.50, the 0.3085 result represents a substantial improvement over the same model trained without undersampling (previously 0.144), demonstrating the direct impact of the balanced training set on minority-class detection. Tuning is addressed in §6.3. The variable importance plot (Mean Decrease in Accuracy) reveals that **Street lighting**, **First impact type**, **Other TU type**, and **Distance** are the four strongest predictors, displacing the temporal features (Day of week, Month) previously dominant in the unbalanced model. This shift reflects the balanced training set allowing the model to better resolve the structural and environmental conditions associated with fatal crashes rather than over-fitting the majority Injury signal.
+The Random Forest achieved an OOB error rate of 22.85%, Macro-F1 of 0.7029, Weighted F1 of 0.7802, and Cohen's Kappa of 0.5436 on the test set. Fatal Recall was 0.4681: the model correctly identified a substantial share of fatal crashes, with the remaining misclassifications concentrated in the Injury class and a much smaller portion in Non-casualty. The OOB error is higher than would be observed on the original imbalanced dataset because the balanced training set (`df_train_bal`) shifts the prior — the OOB samples now contain a higher proportion of Fatal and Injury observations relative to what the full dataset would produce. Although the baseline Fatal Recall of 0.4681 sits just below the 0.50 safety threshold, it represents a substantial improvement over the same model trained without undersampling (previously around 0.14), demonstrating the direct impact of the balanced training set on minority-class detection. Tuning is addressed in §6.3. The variable importance plot (Mean Decrease in Accuracy) reveals that **Street lighting**, **First impact type**, **Other TU type**, and **Distance** are the four strongest predictors, displacing the temporal features (Day of week, Month) previously dominant in the unbalanced model. This shift reflects the balanced training set allowing the model to better resolve the structural and environmental conditions associated with fatal crashes rather than over-fitting the majority Injury signal.
 
 #### 5.4 XGBoost
 ```{r xgb-encode, message=FALSE, warning=FALSE, results='hide'}                
@@ -1112,7 +1113,7 @@ p_nb_cm <- ggplot(cm_nb_df, aes(x = Reference, y = Prediction, fill = Freq)) +
 
 p_nb_cm
 ```
-The Naive Bayes model achieved a high Fatal Recall of 0.771, meaning that it successfully identified most fatal crashes in the dataset. However, overall performance remained relatively weak, with low Accuracy (0.307), Macro-F1 (0.243), Weighted F1 (0.249), and Kappa (0.112). The confusion matrix showed that the model substantially over-predicted the Fatal class, incorrectly classifying many Injury and Non-casualty crashes as Fatal. This suggests that while Naive Bayes is highly sensitive to minority-class detection, its conditional independence assumption is too simplistic for capturing the complex relationships between environmental, spatial, and traffic-related crash features. Overall, Naive Bayes served as a useful probabilistic baseline model, but more advanced ensemble methods such as Random Forest and XGBoost provided better overall classification balance and predictive performance.
+The Naive Bayes model achieved a Fatal Recall of 0.771, meaning that it successfully identified most fatal crashes in the dataset. However, overall performance remained relatively weak, with low Macro-F1 (0.243), Weighted F1 (0.249), and Kappa (0.112). The confusion matrix showed that the model substantially over-predicted the Fatal class, incorrectly classifying many Injury and Non-casualty crashes as Fatal. This suggests that while Naive Bayes is highly sensitive to minority-class detection, its conditional independence assumption is too simplistic for capturing the complex relationships between environmental, spatial, and traffic-related crash features. Overall, Naive Bayes served as a useful probabilistic baseline model, but more advanced ensemble methods such as Random Forest and XGBoost provided better overall classification balance and predictive performance.
 ------------------------------------------------------------------------
 
 ### 6 Model Improvement
@@ -1186,11 +1187,11 @@ before_after_lr <- data.frame(
 knitr::kable(before_after_lr, caption = "Logistic Regression  -  Before vs After Tuning")
 ```
 
-The tuning process identified decay = 0.01 as the optimal threshold, maximizing the cross-validated Macro-F1 score. Retraining the model with this moderate penalty yielded a subtle but important shift in the test set metrics: Macro-F1 improved from 0.4395 to 0.4417, while Fatal Recall decreased slightly from 0.7739 to 0.7606. This reflects a classic precision-recall trade-off. Without regularization (decay = 0), the model aggressively predicted the Fatal class to minimize the SMOTE-induced loss, leading to a high recall but an excess of false positives. Applying the L2 penalty constrained these extreme weights, forcing the model to be slightly more conservative. This reduced false alarms and improved the overall Macro-F1 balance. Given that the tuned Fatal Recall of 0.7606 still robustly exceeds the 0.50 safety constraint, this regularized model demonstrates superior generalization and replaces the baseline.
+The tuning process identified decay = 0.001 as the optimal value, maximizing the cross-validated Macro-F1 score. Retraining the model with this small penalty produced a subtle shift in the test set metrics: Macro-F1 changed marginally from 0.4446 to 0.4442, while Fatal Recall decreased slightly from 0.7660 to 0.7553. This reflects a classic precision–recall trade-off. Without regularization (decay = 0), the model aggressively predicted the Fatal class to minimize the SMOTE-induced loss, leading to a high recall but an excess of false positives. Applying even a small L2 penalty constrained these extreme weights, forcing the model to be slightly more conservative. This reduced false alarms with virtually unchanged overall Macro-F1 balance. Given that the tuned Fatal Recall of 0.7553 still robustly exceeds the 0.50 safety constraint, this regularized model demonstrates marginally improved generalization and replaces the baseline.
 
 #### 6.2 Decision Tree - Improvement
 
-To optimize the Decision Tree, Cost-Complexity Pruning was applied to control the tree's depth and mitigate overfitting. The baseline model was artificially constrained by the default complexity parameter (cp = 0.01). To determine the true optimal architecture, a deeper tree was initially grown with a relaxed threshold (cp = 0.001), and the cross-validation error (xerror) was tracked across varying tree sizes. Minimization of the xerror identified an optimal split threshold of cp = 0.00115.
+To optimize the Decision Tree, Cost-Complexity Pruning was applied to control the tree's depth and mitigate overfitting. The baseline model was artificially constrained by the default complexity parameter (cp = 0.01). To determine the true optimal architecture, a deeper tree was initially grown with a relaxed threshold (cp = 0.001), and the cross-validation error (xerror) was tracked across varying tree sizes. Minimization of the xerror identified an optimal split threshold of cp = 0.001.
 
 ```{r improve-dt, message=FALSE, warning=FALSE, results='hold', out.width='55%', fig.align='center'}
 # Decision Tree improvement  -  tune complexity by pruning via CP table
@@ -1261,7 +1262,7 @@ print(p_dt_tuned_cm)
 ggsave("plots/6_2_decision_tree_tuned_confusion_matrix.png", p_dt_tuned_cm, width = 7, height = 5, dpi = 150)
 ```
 
-Evaluating this deeper, tuned tree on the test set revealed a significant divergence in performance: Fatal Recall surged to an impressive 0.8271, but the primary metric, Macro-F1, dropped from 0.4290 to 0.4068. This occurs because the deeper tree captures more granular, complex rules. When combined with the heavy inverse-frequency class weights used during training, the deeper tree became hyper-sensitive to the minority class. While this hyper-sensitivity successfully captured nearly 83% of all fatal crashes, it generated a disproportionate number of false positives (misclassifying severe injuries as fatal), which severely penalized overall precision. Because the project's primary objective is to maximize Macro-F1 subject to a Fatal Recall $\geq$ 0.50, the shallower baseline model (cp = 0.01) is strictly preferred. It offers a more balanced decision boundary, achieving a higher Macro-F1 while comfortably satisfying the safety constraint.
+Evaluating this deeper, tuned tree on the test set revealed improvements on both axes: Fatal Recall rose to an impressive 0.8138 while the primary metric, Macro-F1, also increased from 0.4005 to 0.4369. Weighted F1 (0.5854) and Kappa (0.2755) improved similarly. This shows that the deeper tree captures more granular, complex rules without trading off overall balance: when combined with the inverse-frequency class weights used during training, the deeper tree became more sensitive to the minority class while still preserving discriminative power on Injury and Non-casualty. Because the project's primary objective is to maximize Macro-F1 subject to a Fatal Recall $\geq$ 0.50, the deeper tuned model (cp = 0.001) is strictly preferred over the shallower baseline (cp = 0.01). It offers a more confident decision boundary, achieving both a higher Macro-F1 and a substantially higher Fatal Recall, comfortably satisfying the safety constraint and replacing the baseline.
 
 #### 6.3 Random Forest - Improvement
 
@@ -1361,9 +1362,9 @@ print(p_rf_tuned_cm)
 ggsave("plots/6_3_random_forest_tuned_confusion_matrix.png", p_rf_tuned_cm, width = 7, height = 5, dpi = 150)
 ```
 
-`tuneRF` identified **mtry = 9** as optimal, 1.5 times the default of $\lfloor\sqrt{p}\rfloor = 6$. Retraining with this value yielded improvements across all key metrics: Macro-F1 increased from 0.6027 to 0.6189 and Fatal Recall improved from 0.3085 to 0.3670 — an absolute gain of +0.0585. The tuned model correctly identified 138 fatal crashes (up from 116 at default `mtry`), with misclassifications split between Injury (218) and Non-casualty (20) — both lower than the baseline, confirming a genuine improvement in Fatal discrimination rather than a simple threshold shift. A larger `mtry` forces each tree to evaluate more candidate variables at each split, which helps the ensemble identify the specific combinations of lighting, impact type, and distance that characterise fatal outcomes rather than repeatedly selecting the dominant Injury-associated features.
+`tuneRF` identified **mtry = 13** as optimal, more than double the default of $\lfloor\sqrt{p}\rfloor = 6$. Retraining with this value yielded improvements across all key metrics: Macro-F1 increased from 0.7029 to 0.7079 and Fatal Recall improved from 0.4681 to 0.5106 — an absolute gain of +0.0425. The tuned model correctly identified a larger share of fatal crashes than the default-`mtry` baseline, with the OOB error rate dropping from 0.2285 to 0.2242, confirming a genuine improvement in Fatal discrimination rather than a simple threshold shift. A larger `mtry` forces each tree to evaluate more candidate variables at each split, which helps the ensemble identify the specific combinations of lighting, impact type, and distance that characterise fatal outcomes rather than repeatedly selecting the dominant Injury-associated features.
 
-Two limitations are visible from the tuning plots. First, the mtry vs OOB curve is monotonically decreasing from 4 to 9 without reaching a plateau, suggesting that `tuneRF`'s stepwise search terminated early and a larger `mtry` (e.g. 12–15) may reduce OOB error further; this is left as a direction for the final submission. Second, the OOB error vs number of trees curve has not fully converged at ntree = 100 — the error is still declining at the final tree, indicating that a larger forest (e.g. ntree = 300–500) would likely yield further marginal improvements in both OOB stability and test-set performance. Both constraints were accepted for computational feasibility within a single knit session.
+One limitation is visible from the tuning plots. The OOB error vs number of trees curve has not fully converged at ntree = 100 — the error is still declining at the final tree, indicating that a larger forest (e.g. ntree = 300–500) would likely yield further marginal improvements in both OOB stability and test-set performance. This constraint was accepted for computational feasibility within a single knit session.
 
 #### 6.4 XGBoost - Improvement
 
@@ -1831,12 +1832,47 @@ ggsave("plots/6_6_tuned_nb_confusion_matrix.png", p_nb_tuned_cm,
 
        width = 6, height = 4, dpi = 220)
 ```
-Hyperparameter tuning improved the aggregate Macro-F1 and Weighted F1 scores, but it completely removed the model’s ability to detect Fatal crashes. The tuned model predicted all observations as the majority Injury class, resulting in Fatal Recall = 0. Therefore, despite slightly better overall metrics, the tuned Naive Bayes model is not suitable for this project because identifying Fatal crashes is a critical objective.
+Hyperparameter tuning produced small but consistent improvements across all four metrics: Macro-F1 rose marginally from 0.243 to 0.245, Fatal Recall improved from 0.771 to 0.782, Weighted F1 increased from 0.249 to 0.253, and Kappa was effectively unchanged at 0.112. The tuned configuration (laplace = 0, usekernel = FALSE) is therefore retained as the final Naive Bayes model. However, the absolute level of performance remains weak: Macro-F1 below 0.25 and Weighted F1 below 0.26 reflect the fact that the conditional independence assumption is fundamentally violated in this dataset — speed limit, urbanisation, lighting, and surface condition are highly correlated, which no choice of laplace smoothing can repair. Naive Bayes is therefore retained as a useful probabilistic baseline that satisfies the Fatal Recall ≥ 0.50 constraint, but it is clearly outperformed on Macro-F1 by tree-based ensemble methods.
 ------------------------------------------------------------------------
 
 ### 7 Model Evaluation & Selection
 
-<!-- TODO: [member name]  -  comparison table (6 models × 4 metrics), best model selection + justification -->
+All six tuned models are evaluated on the same held-out test set ($n \approx 13{,}500$, drawn from the 2020–2023 stratified split) using four complementary metrics. **Macro-F1** is the primary metric — its equal class weighting prevents the majority Injury and Non-casualty classes from masking poor Fatal performance. **Fatal Recall** is treated as a hard safety constraint (≥ 0.50): a model that misses too many fatal crashes cannot be deployed for emergency-response or risk-screening use cases, regardless of how strong its aggregate scores look. **Weighted F1** and **Cohen's Kappa** are reported as cross-checks against the primary ranking, since a robust winner should lead on multiple metrics rather than on a single one.
+
+<div style="width:55%;">
+
+```{r evaluation-table, message=FALSE, warning=FALSE}
+eval_tbl <- data.frame(
+  Model = c("Logistic Regression", "Decision Tree", "Random Forest",
+            "XGBoost", "KNN (k = 18)", "Naive Bayes"),
+  `Macro-F1`     = c(0.4442, 0.4369, 0.7079, 0.267, 0.5304, 0.245),
+  `Fatal Recall` = c(0.7553, 0.8138, 0.5106, 0.34,  0.5904, 0.782),
+  `Weighted F1`  = c(0.5987, 0.5854, 0.7817, 0.401, 0.6734, 0.253),
+  `Kappa`        = c(0.2821, 0.2755, 0.5473, 0.004, 0.3400, 0.112),
+  `Meets ≥ 0.50` = c("Yes",  "Yes",  "Yes",  "No",  "Yes",  "Yes"),
+  check.names = FALSE
+)
+
+knitr::kable(eval_tbl, align = c("l", "r", "r", "r", "r", "c"),
+             caption = "Table 2: Tuned Model Performance on the Test Set") |>
+  kableExtra::kable_styling(full_width = FALSE, position = "left",
+                            bootstrap_options = c("striped", "condensed"),
+                            font_size = 12) |>
+  kableExtra::row_spec(0, bold = TRUE, background = "#2E74B5", color = "white") |>
+  kableExtra::row_spec(3, bold = TRUE, background = "#eaf3fb") |>
+  kableExtra::column_spec(1, bold = TRUE) |>
+  kableExtra::column_spec(3, color = "#d62728")
+```
+
+</div>
+
+Applying the safety constraint **Fatal Recall ≥ 0.50** first eliminates **XGBoost** (Fatal Recall = 0.34). Despite extensive grid search over `nrounds`, `max_depth`, and `eta`, the weighted-loss configuration converged to a near-trivial classifier — Cohen's Kappa of 0.004 is barely better than random for this three-class task, indicating that the one-hot expansion of high-cardinality categoricals interacts poorly with the chosen weighting scheme and pushes XGBoost out of contention.
+
+Among the five models that clear the safety floor, three — **Logistic Regression, Decision Tree, and Naive Bayes** — achieve high Fatal Recall (> 0.75) but remain below Macro-F1 = 0.45. These models detect fatal crashes aggressively at the cost of precision on Injury and Non-casualty; they function effectively as high-recall safety nets but are not balanced enough to serve as primary classifiers when the rubric prioritises Macro-F1. Naive Bayes is the weakest of this group on both Macro-F1 (0.245) and Weighted F1 (0.253), confirming that its conditional independence assumption — violated by strong correlations between speed limit, urbanisation, lighting, and surface condition — fundamentally limits its discriminative capacity on this dataset.
+
+Only two models satisfy **both** the Fatal Recall ≥ 0.50 floor **and** Macro-F1 above 0.50: **KNN (Macro-F1 = 0.5304)** and **Random Forest (Macro-F1 = 0.7079)**. The gap between them is substantial and consistent across every metric: Random Forest leads KNN by +0.18 on Macro-F1, +0.11 on Weighted F1, and +0.21 on Cohen's Kappa. Critically, this is not a single-metric artefact — the ranking is robust whether one prioritises class-balanced performance (Macro-F1), prevalence-weighted performance (Weighted F1), or agreement above chance (Kappa). Random Forest is therefore the clear best-performing model on this evaluation, satisfying every quantitative criterion the rubric defines.
+
+<!-- TODO: [member name]  -  Selection rationale and best-model justification (§7.2) -->
 
 ------------------------------------------------------------------------
 

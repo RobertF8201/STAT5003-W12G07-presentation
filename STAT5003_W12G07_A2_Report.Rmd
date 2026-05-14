@@ -33,6 +33,7 @@ library(MLmetrics)
 library(Matrix)
 library(tidyr)
 library(tibble)
+library(naivebayes)
 
 # Create plots output folder  -  all ggsave() calls write here for use in Presentation Rmd
 dir.create("plots", showWarnings = FALSE)

@@ -1873,22 +1873,209 @@ Among the five models that clear the safety floor, three — **Logistic Regressi
 
 Only two models satisfy **both** the Fatal Recall ≥ 0.50 floor **and** Macro-F1 above 0.50: **KNN (Macro-F1 = 0.5304)** and **Random Forest (Macro-F1 = 0.7079)**. The gap between them is substantial and consistent across every metric: Random Forest leads KNN by +0.18 on Macro-F1, +0.11 on Weighted F1, and +0.21 on Cohen's Kappa. Critically, this is not a single-metric artefact — the ranking is robust whether one prioritises class-balanced performance (Macro-F1), prevalence-weighted performance (Weighted F1), or agreement above chance (Kappa). Random Forest is therefore the clear best-performing model on this evaluation, satisfying every quantitative criterion the rubric defines.
 
-<!-- TODO: [member name]  -  Selection rationale and best-model justification (§7.2) -->
 
 ------------------------------------------------------------------------
 
 ### 8 Final Results & Conclusion
 
-<!-- TODO: [member name]  -  answer RQ, top predictors, practical implications, process reflection -->
+```{r  message=FALSE, warning=FALSE}
+# =========================
+# Prepare 2024 Holdout Data for Tuned Random Forest
+# =========================
+
+year_col <- names(df_model)[grepl("year", names(df_model), ignore.case = TRUE)][1]
+
+df_holdout_2024 <- df_model %>%
+  filter(.data[[year_col]] == 2024) %>%
+  filter(!is.na(`Degree of crash`))
+
+# RF required variables
+required_vars <- names(model_rf_tuned$forest$ncat)
+
+x_2024 <- df_holdout_2024
+
+# Add missing columns if needed
+missing_vars <- setdiff(required_vars, names(x_2024))
+
+for (v in missing_vars) {
+  x_2024[[v]] <- NA
+}
+
+# Keep same variables and order
+x_2024 <- x_2024[, required_vars, drop = FALSE]
+
+# Handle missing values and factor levels
+for (v in required_vars) {
+  
+  # If variable is categorical in RF
+  if (v %in% names(model_rf_tuned$forest$xlevels)) {
+    
+    train_levels <- model_rf_tuned$forest$xlevels[[v]]
+    
+    # Convert to character first
+    x_2024[[v]] <- as.character(x_2024[[v]])
+    
+    # Replace unseen or missing levels
+    replacement_level <- if ("Unknown" %in% train_levels) {
+      "Unknown"
+    } else if ("Other" %in% train_levels) {
+      "Other"
+    } else {
+      train_levels[1]
+    }
+    
+    x_2024[[v]][is.na(x_2024[[v]]) | !(x_2024[[v]] %in% train_levels)] <- replacement_level
+    
+    x_2024[[v]] <- factor(x_2024[[v]], levels = train_levels)
+    
+  } else {
+    
+    # Numeric variables
+    x_2024[[v]] <- as.numeric(x_2024[[v]])
+    x_2024[[v]][is.na(x_2024[[v]])] <- median(x_2024[[v]], na.rm = TRUE)
+    
+    # If median is still NA, replace with 0
+    x_2024[[v]][is.na(x_2024[[v]])] <- 0
+  }
+}
+
+# Outcome
+y_2024 <- factor(
+  df_holdout_2024$`Degree of crash`,
+  levels = c("Fatal", "Injury", "Non_casualty")
+)
+
+# Check row count
+nrow(x_2024)
+table(y_2024)
+# =========================
+
+# Predict 2024 Holdout Data
+
+# =========================
+
+pred_rf_2024 <- predict(
+
+  model_rf_tuned,
+
+  newdata = x_2024
+
+)
+
+cm_rf_2024 <- confusionMatrix(
+
+  pred_rf_2024,
+
+  y_2024
+
+)
+
+cm_rf_2024
+# =========================
+# 2024 Holdout Metrics
+# =========================
+
+recall_2024 <- cm_rf_2024$byClass[, "Sensitivity"]
+precision_2024 <- cm_rf_2024$byClass[, "Pos Pred Value"]
+
+f1_2024 <- 2 * precision_2024 * recall_2024 /
+  (precision_2024 + recall_2024)
+
+# Treat undefined F1 as 0
+f1_2024[is.na(f1_2024)] <- 0
+
+macro_f1_2024 <- mean(f1_2024)
+
+fatal_recall_2024 <- recall_2024["Class: Fatal"]
+
+class_weights_2024 <- prop.table(table(y_2024))
+f1_names_2024 <- gsub("Class: ", "", names(f1_2024))
+
+weighted_f1_2024 <- sum(
+  f1_2024 * class_weights_2024[f1_names_2024],
+  na.rm = TRUE
+)
+
+kappa_2024 <- cm_rf_2024$overall["Kappa"]
+
+rf_2024_metrics <- data.frame(
+  Model = "Tuned Random Forest on 2024 Holdout",
+  Macro_F1 = round(macro_f1_2024, 3),
+  Fatal_Recall = round(fatal_recall_2024, 3),
+  Weighted_F1 = round(weighted_f1_2024, 3),
+  Kappa = round(kappa_2024, 3)
+)
+
+knitr::kable(
+  rf_2024_metrics,
+  caption = "Tuned Random Forest Performance on 2024 Holdout Data"
+)
+# =========================
+# 2024 Holdout Confusion Matrix Heatmap
+# =========================
+
+cm_rf_2024_df <- as.data.frame(cm_rf_2024$table)
+
+p_rf_2024_cm <- ggplot(
+  cm_rf_2024_df,
+  aes(x = Reference, y = Prediction, fill = Freq)
+) +
+  geom_tile(color = "white") +
+  geom_text(aes(label = Freq), size = 3.5) +
+  scale_fill_gradient(low = "white", high = "steelblue") +
+  labs(
+    title = "Tuned Random Forest on 2024 Holdout",
+    subtitle = paste0("Fatal Recall = ", round(fatal_recall_2024, 3)),
+    x = "Actual Class",
+    y = "Predicted Class",
+    fill = "Count"
+  ) +
+  theme_minimal()
+
+p_rf_2024_cm
+
+ggsave(
+  "plots/8_rf_2024_holdout_confusion_matrix.png",
+  p_rf_2024_cm,
+  width = 6,
+  height = 4,
+  dpi = 220
+)
+```
+```{r}
+ggsave(
+  "plots/8_rf_2024_holdout_confusion_matrix.png",
+  p_rf_2024_cm,
+  width = 6.5,
+  height = 4.2,
+  dpi = 220
+)
+```
+
+## 8 Final Results & Conclusion
+
+This project investigated NSW road crash severity prediction using integrated crash and vehicle data from 2020–2024. Multiple classification models were evaluated, including Logistic Regression, Decision Tree, Random Forest, XGBoost, KNN, and Naive Bayes.
+
+Among all models, the tuned Random Forest achieved the best overall cross-validation performance, producing the highest Macro-F1 score and the most balanced multi-class classification results. Variable importance analysis showed that street lighting, impact type, vehicle type, and speed-related variables were the strongest predictors of crash severity.
+
+To evaluate real-world generalisation, the tuned Random Forest was tested on an unseen 2024 temporal holdout dataset. The model achieved:
+
+- Accuracy: 0.674  
+- Macro-F1: 0.334  
+- Weighted-F1: 0.572  
+- Fatal Recall: 0.106  
+
+Although overall accuracy remained reasonable, Fatal Recall dropped substantially. Most Fatal crashes were incorrectly predicted as Injury, showing that the model struggled to generalise to future-year crash patterns. This was likely caused by severe class imbalance and temporal drift between training and deployment data.
+
+Overall, the project demonstrated that models performing well under cross-validation may still face significant challenges in real-world deployment. Future work could improve Fatal crash detection through threshold tuning, cost-sensitive learning, and temporal validation strategies.
 
 ------------------------------------------------------------------------
 
 ### References
 
-<!-- TODO: [member name]  -  APA 7th format references for all sources cited -->
-
+Transport for NSW. (2025). *NSW crash data* [Data set]. Australian Government Data Portal. https://www.data.gov.au/data/dataset/nsw-2-nsw-crash-data
 ------------------------------------------------------------------------
 
 ### Acknowledgement of AI
 
-<!-- TODO: [member name]  -  AI acknowledgement statement -->
+Generative AI tools (including ChatGPT/Codex/Claude Code) were used to assist with coding support, debugging, data visualisation suggestions, language refinement. All modelling decisions, interpretation of results, and final report content were reviewed and validated by the authors.

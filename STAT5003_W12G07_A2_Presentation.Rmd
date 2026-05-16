@@ -67,6 +67,40 @@ body {
   overflow: hidden !important;
 }
 
+/* ===== Force black text everywhere ===== */
+
+slides > slide {
+  color: #111 !important;
+}
+
+slides > slide p,
+slides > slide li,
+slides > slide td,
+slides > slide th,
+slides > slide span,
+slides > slide div {
+  color: #111 !important;
+}
+
+/* Preserve intentional colours (red fatal, blue headers, white-on-blue) */
+slides > slide [style*="color:#d62728"],
+slides > slide [style*="color: #d62728"] { color: #d62728 !important; }
+slides > slide [style*="color:white"],
+slides > slide [style*="color: white"]   { color: white !important; }
+slides > slide [style*="color:#ff7f0e"],
+slides > slide [style*="color: #ff7f0e"] { color: #ff7f0e !important; }
+slides > slide [style*="color:#2ca02c"],
+slides > slide [style*="color: #2ca02c"] { color: #2ca02c !important; }
+
+/* ===== Consistent base font size for slide body ===== */
+
+slides > slide p,
+slides > slide li,
+slides > slide td,
+slides > slide th {
+  font-size: 20px !important;
+}
+
 </style>
 
 ```{r setup, include=FALSE}
@@ -190,7 +224,7 @@ ft <- flextable(overview) |>
 ft
 ```
 
-<p style="font-size:13px; text-align:center; margin-top:12px; color:#555;">
+<p style="font-size:13px; text-align:center; margin-top:12px; color:#111;">
 The merged dataset combines crash-level environmental conditions with traffic unit vehicle data, giving us both <b>where</b> a crash happened and <b>who</b> was involved. 170,962 records spanning 5 years provide robust signal for modelling, but the extreme class imbalance (Fatal = 1.4%) demands careful handling throughout.
 </p>
 
@@ -701,7 +735,7 @@ XGBoost was chosen as our **boosting-based ensemble learner** - it builds trees 
 
 </table>
 
-<p style="font-size:14px; color:#777; margin-top:14px;">
+<p style="font-size:14px; color:#111; margin-top:14px;">
 
 High Fatal Recall, but many false alarms.
 
@@ -952,7 +986,7 @@ The sharp decline in Fatal Recall suggests the presence of temporal drift and hi
 
 <img src="plots/8_rf_2024_holdout_confusion_matrix.png" style="width:100%;"/>
 
-<p style="font-size:13px; color:#777; margin-top:8px;">
+<p style="font-size:13px; color:#111; margin-top:8px;">
 Most actual Fatal crashes were predicted as Injury, indicating temporal drift and weak future-year generalisation.
 </p>
 

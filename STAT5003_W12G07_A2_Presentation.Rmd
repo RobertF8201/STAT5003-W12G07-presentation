@@ -396,7 +396,7 @@ df_raw %>%
 <li>**Encoding** - trees use native R `factor`; KNN/LR use one-hot; rare LGA levels : `"Other"`</li>
 <li>**Scaling** - Z-score standardisation within fold for KNN; trees are scale-invariant</li>
 <li>**Class imbalance** - inverse-frequency class weights (all models); SMOTE applied **inside training fold only**</li>
-<li>**Split** - 2024 data sealed as temporal holdout; 80/20 stratified split on 2020-2023; 5-fold CV</li>
+<li>**Split** - 2024 data sealed as temporal holdout; 90/10 stratified split on 2020-2023; 5-fold CV</li>
 </ol>
 
 ## Data Preprocessing: Feature Engineering & Class Balancing
@@ -434,7 +434,7 @@ df_raw %>%
 <tbody>
   <tr><td style="padding:4px 10px;">Fatal only ~1.4% of crashes</td><td style="padding:4px 10px;">Naive accuracy-maximising models predict majority class only - useless for our goal</td></tr>
   <tr style="background:#f5f5f5;"><td style="padding:4px 10px;">Class weights (all models)</td><td style="padding:4px 10px;">Inverse-frequency weights penalise Fatal misclassification more heavily during training</td></tr>
-  <tr><td style="padding:4px 10px;">SMOTE (LR, KNN)</td><td style="padding:4px 10px;">Synthetic oversampling applied inside training fold only; Fatal raised to ~10% - test set unmodified</td></tr>
+  <tr><td style="padding:4px 10px;">SMOTE (LR, NB)</td><td style="padding:4px 10px;">Synthetic oversampling applied inside training fold only; Fatal raised to ~10% - test set unmodified</td></tr>
   <tr style="background:#f5f5f5;"><td style="padding:4px 10px;">Primary metrics</td><td style="padding:4px 10px;">Macro-F1 (equal weight across classes) + Fatal Recall (hard constraint: target ≥ 0.50)</td></tr>
 </tbody>
 </table>
@@ -445,7 +445,7 @@ df_raw %>%
 ## Model Fitting: Approach & Setup
 
 
-We implemented six diverse classification models to balance interpretability and predictive power. All models were trained on the same stratified 50% subsample ($n \approx 55,000$) to ensure fair comparison.
+We implemented six diverse classification models to balance interpretability and predictive power. All models were trained on the same balanced training set (`df_train_bal`, $n \approx 31{,}500$) constructed via random undersampling from the 90% training split, ensuring a fair and consistent comparison across all six models.
 
 | Model | R Package | Imbalance Strategy | Primary Hyperparameter |
 |:---|:---|:---|:---|
@@ -531,7 +531,7 @@ Random Forest was chosen as our **ensemble learner** - by averaging hundreds of 
 <div style="display:flex; align-items:flex-start; gap:16px;">
 <div style="flex:0 0 52%;">
 <img src="plots/5_3_random_forest_variable_importance_top15.png" style="width:75%; height:auto; display:block;"/>
-<p style="font-size:10.5px; text-align:left; margin-top:4px; line-height:1.3; background:#f9f9f9; padding:5px; width:75%;"><b>Top predictors:</b> Street lighting, First impact type, Other TU type, Distance, Key TU type - structural & environmental factors dominate.</p>
+<p style="font-size:10.5px; text-align:left; margin-top:4px; line-height:1.3; background:#f9f9f9; padding:5px; width:75%;"><b>Top predictors:</b> Street lighting, Month of crash, LGA, Key TU type, First impact type - structural & environmental factors dominate over temporal ones.</p>
 </div>
 <div style="flex:0 0 44%; text-align:center;">
 <img src="plots/5_3_random_forest_confusion_matrix.png" style="width:75%; height:auto;"/>
@@ -560,7 +560,7 @@ XGBoost was chosen as our **boosting-based ensemble learner** - it builds trees 
 <img src="plots/5_4_xgboost_variable_importance_top15.png" style="width:75%; height:auto; display:block;"/>
 
 <p style="font-size:10.5px; text-align:left; margin-top:4px; line-height:1.3; background:#f9f9f9; padding:5px; width:75%;">
-<b>Top predictors:</b> The most important variables by Gain indicate which crash, location, time, and road-condition features contributed most to reducing classification error in the boosted trees.
+<b>Top predictors by Gain:</b> Street lighting (Unknown/not stated dummy) dominates with 0.30 gain — nearly 5× the next predictor. Distance, pedestrian/motorcycle involvement, Latitude/Longitude, and Speed limit (100 km/h) follow. Variable names reflect one-hot expanded columns.
 </p>
 </div>
 
@@ -614,6 +614,12 @@ XGBoost was chosen as our **boosting-based ensemble learner** - it builds trees 
 </table>
 </div>
 
+</div>
+
+<div style="font-size:12px; margin-top:10px; display:flex; gap:16px;">
+<div style="background:#fce4e4; border-left:3px solid #d62728; padding:7px 12px; flex:1;">
+<b>⚠ Performance Note:</b> Despite an extensive grid search over nrounds (100–500), max_depth (3–6), and eta (0.03–0.3), XGBoost produced near-trivial predictions (Kappa ≈ 0.003). The tuning curve shows all configurations converging to a narrow 0.29–0.31 Macro-F1 band with no meaningful differentiation — suggesting the model's sequential-boosting structure did not benefit from inverse class weights as intended. See Model Evaluation for a full discussion.
+</div>
 </div>
 
 <!-- cat("Best nrounds:", best_xgb_params$nrounds, "\n") -->
@@ -800,6 +806,9 @@ kable(tuning_tbl, booktabs = TRUE) %>%
 
 ## Model Evaluation
 
+<p style="font-size:14px; margin-bottom:6px; background:#eaf3fb; padding:7px 14px; border-left:4px solid #2E74B5; display:inline-block; width:96%;">
+<b>Selection criteria:</b> Primary metric = <b>Macro-F1</b> (robust to class imbalance) &nbsp;|&nbsp; Hard constraint = <b>Fatal Recall ≥ 0.50</b> (safety floor — models below this are eliminated regardless of other metrics)
+</p>
 
 ```{r slide-evaluation}
 eval_tbl <- tibble::tibble(
@@ -912,82 +921,66 @@ Structural & environmental factors dominate over temporal ones - aligning with t
 The 0.7079 Macro-F1 is the highest among the six candidates while still meeting the safety-first 0.50 Fatal Recall floor - a balance no other model achieved.
 </p>
 
-## Reflection & 2024 Temporal Holdout
+## Final Model Performance & Reflection
 
-<div style="display:flex; gap:28px; align-items:flex-start;">
+<div style="display:flex; gap:24px; align-items:flex-start;">
 
 <!-- LEFT SIDE -->
-<div style="flex:0 0 42%; font-size:18px;">
+<div style="flex:0 0 44%; font-size:15px;">
 
-<p style="font-size:17px; font-weight:bold; margin-bottom:10px;">
-Temporal Holdout Evaluation
+<p style="font-size:16px; font-weight:bold; margin-bottom:6px; color:#1F4E79;">Final Model Performance: 2024 Temporal Holdout</p>
+
+<p style="font-size:13px; margin-bottom:8px; line-height:1.5;">
+The 2024 crash records were entirely excluded from training and tuning and used solely as an unseen <b>temporal holdout</b> — simulating real deployment on future data. The holdout contains <b>~35,000 records</b> at the natural class distribution (~1.4% Fatal), versus the balanced test set of ~13,500 records with ~6% Fatal used during model selection.
 </p>
 
-<ul style="line-height:1.7;">
-
-<li>
-The 2024 crash records were excluded from all training and tuning procedures and used solely as an unseen temporal holdout dataset.
-</li>
-
-<li>
-This evaluation was designed to assess the model’s ability to generalise to future crash patterns under realistic deployment conditions.
-</li>
-
-<li>
-Although the tuned Random Forest achieved the strongest validation performance, substantial degradation was observed on the 2024 holdout data.
-</li>
-
-<li>
-The sharp decline in Fatal Recall suggests the presence of temporal drift and highlights the challenges of rare-event prediction in imbalanced real-world datasets.
-</li>
-
-</ul>
-
-<br>
-
-<table style="font-size:15px; width:100%; border-collapse:collapse;">
-
+<table style="font-size:14px; width:100%; border-collapse:collapse; margin-bottom:10px;">
+<thead>
 <tr style="background:#2E74B5;">
   <th style="color:white; padding:5px 8px; text-align:left;">Metric</th>
-  <th style="color:white; padding:5px 8px; text-align:right;">Value</th>
+  <th style="color:white; padding:5px 8px; text-align:center;">Test Set</th>
+  <th style="color:white; padding:5px 8px; text-align:center;">2024 Holdout</th>
 </tr>
-
+</thead>
+<tbody>
 <tr style="background:#f2f2f2;">
-  <td style="padding:5px 8px;">Accuracy</td>
-  <td style="padding:5px 8px; text-align:right;">0.674</td>
-</tr>
-
-<tr>
   <td style="padding:5px 8px;">Macro-F1</td>
-  <td style="padding:5px 8px; text-align:right;">0.334</td>
+  <td style="padding:5px 8px; text-align:center;">0.7079</td>
+  <td style="padding:5px 8px; text-align:center;">0.334</td>
 </tr>
-
-<tr style="background:#f2f2f2;">
-  <td style="padding:5px 8px; color:#d62728; font-weight:bold;">Fatal Recall</td>
-  <td style="padding:5px 8px; text-align:right; color:#d62728; font-weight:bold;">0.106</td>
-</tr>
-
 <tr>
-  <td style="padding:5px 8px;">Weighted F1</td>
-  <td style="padding:5px 8px; text-align:right;">0.572</td>
+  <td style="padding:5px 8px; color:#d62728; font-weight:bold;">Fatal Recall</td>
+  <td style="padding:5px 8px; text-align:center; color:#d62728; font-weight:bold;">0.5106</td>
+  <td style="padding:5px 8px; text-align:center; color:#d62728; font-weight:bold;">0.106</td>
 </tr>
-
 <tr style="background:#f2f2f2;">
-  <td style="padding:5px 8px;">Kappa</td>
-  <td style="padding:5px 8px; text-align:right;">0.037</td>
+  <td style="padding:5px 8px;">Weighted F1</td>
+  <td style="padding:5px 8px; text-align:center;">0.7817</td>
+  <td style="padding:5px 8px; text-align:center;">0.572</td>
 </tr>
-
+<tr>
+  <td style="padding:5px 8px;">Kappa</td>
+  <td style="padding:5px 8px; text-align:center;">0.5473</td>
+  <td style="padding:5px 8px; text-align:center;">0.037</td>
+</tr>
+</tbody>
 </table>
+
+<p style="font-size:16px; font-weight:bold; margin-bottom:6px; color:#1F4E79;">Reflection</p>
+
+<p style="font-size:13px; line-height:1.5;">
+The sharp drop in Fatal Recall (0.51 → 0.106) reflects two compounding factors. First, <b>class-proportion mismatch</b>: the model was calibrated on a balanced training set where Fatal was ~6% of rows; at inference time in 2024, fatals are back to ~1.4% — a 4× rarer signal. Second, <b>temporal drift</b>: crash patterns, reporting conventions, or infrastructure conditions in 2024 may differ from the 2020–2023 training window in ways the model cannot anticipate. Together, these highlight that strong held-out validation metrics do not guarantee robustness under real deployment, particularly for rare, high-consequence events.
+</p>
 
 </div>
 
 <!-- RIGHT SIDE -->
-<div style="flex:0 0 58%; text-align:center;">
+<div style="flex:0 0 56%; text-align:center;">
 
 <img src="plots/8_rf_2024_holdout_confusion_matrix.png" style="width:100%;"/>
 
-<p style="font-size:13px; color:#111; margin-top:8px;">
-Most actual Fatal crashes were predicted as Injury, indicating temporal drift and weak future-year generalisation.
+<p style="font-size:12px; color:#111; margin-top:6px; background:#fce4e4; border-left:3px solid #d62728; padding:6px; text-align:left;">
+Of 528 actual Fatal crashes in the 2024 holdout, only <b>56 were correctly identified</b> — the remaining 472 were predicted as Injury. The model reverts to predicting the majority class when the minority is as rare as 1.4%, reinforcing the need for probability-threshold calibration or a dedicated rare-event model in production.
 </p>
 
 </div>

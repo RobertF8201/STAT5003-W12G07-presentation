@@ -93,14 +93,38 @@ slides > slide [style*="color:#2ca02c"],
 slides > slide [style*="color: #2ca02c"] { color: #2ca02c !important; }
 
 /* ===== Responsive font size — scales with viewport width ===== */
-/* clamp(min, preferred, max): 12px floor, 1.25vw preferred, 20px ceiling   */
-/* 1280px laptop  => 16px  |  1440px MBP => 18px  |  1920px desktop => 20px */
+/* Laptop  (<1600px): clamp(12px, 1.25vw, 20px) => 16px @ 1280 | 18px @ 1440 */
+/* Desktop (>=1600px): clamp(20px, 1.35vw, 26px) => 22px @ 1600 | 26px @ 1920 */
 
 slides > slide p,
 slides > slide li,
 slides > slide td,
 slides > slide th {
   font-size: clamp(12px, 1.25vw, 20px) !important;
+}
+
+/* ===== Global image cap — prevents any image overflowing slide on any screen ===== */
+/* 42vh = ~336px on 800px laptop | ~454px on 1080p | ~605px on 1440p             */
+slides > slide > article img {
+  max-height: 42vh !important;
+  width: auto !important;
+  max-width: 100% !important;
+  display: block;
+}
+
+/* ===== Intro paragraphs above image grids stay compact on all screens ===== */
+slides > slide > article > p {
+  margin-bottom: 6px !important;
+}
+
+/* ===== Large screen (>=1600px): boost font size ===== */
+@media (min-width: 1600px) {
+  slides > slide p,
+  slides > slide li,
+  slides > slide td,
+  slides > slide th {
+    font-size: clamp(20px, 1.35vw, 26px) !important;
+  }
 }
 
 /* ===== Slide 9: make outer container fill slide height so tables spread out == */
@@ -256,9 +280,9 @@ The merged dataset combines crash-level environmental conditions with traffic un
 
 ## EDA & Data Understanding: Class Imbalance
 
-<div style="display:flex; align-items:flex-start; gap:20px;">
-<div style="flex:0 0 58%;">
-```{r class-imbalance-robert, echo=FALSE, message=FALSE, warning=FALSE, fig.width=7, fig.height=5}
+<div style="display:flex; align-items:center; gap:22px; width:100%; height:74vh;">
+<div style="flex:1 1 55%; min-width:0;">
+```{r class-imbalance-robert, echo=FALSE, message=FALSE, warning=FALSE, fig.width=7, fig.height=5, out.width="100%"}
 
 class_dist <- df_raw %>%
   count(severity) %>%
@@ -292,15 +316,24 @@ ggplot(class_dist,
   theme(legend.position = "none")
 ```
 </div>
-<div style="flex:0 0 38%; padding-top:10px; font-size:14px;">
+<div style="flex:1 1 42%; min-width:0;">
 
-| Issue / Decision | Detail |
-|:-----------------|:-------|
-| **Class imbalance** | Fatal only ~1.4% of all crashes |
-| **Risk of naive models** | Accuracy-maximising models ignore Fatal entirely |
-| **Imbalance strategy** | Inverse-frequency class weights (all models) |
-| **SMOTE** | Applied inside training fold only; synthetic Fatal share raised to ~10% in training |
-| **Primary metrics** | Macro-F1 and Fatal Recall (target >= 0.50) |
+<table style="width:100%; border-collapse:collapse; table-layout:fixed;">
+<colgroup><col style="width:40%"><col style="width:60%"></colgroup>
+<thead>
+<tr style="background:#2E74B5; color:white;">
+  <th style="padding:6px 10px; text-align:left; color:white; word-wrap:break-word;">Issue / Decision</th>
+  <th style="padding:6px 10px; text-align:left; color:white; word-wrap:break-word;">Detail</th>
+</tr>
+</thead>
+<tbody>
+  <tr><td style="padding:5px 10px; word-wrap:break-word;"><b>Class imbalance</b></td><td style="padding:5px 10px; word-wrap:break-word;">Fatal only ~1.4% of all crashes</td></tr>
+  <tr style="background:#f5f5f5;"><td style="padding:5px 10px; word-wrap:break-word;"><b>Risk of naive models</b></td><td style="padding:5px 10px; word-wrap:break-word;">Accuracy-maximising models ignore Fatal entirely</td></tr>
+  <tr><td style="padding:5px 10px; word-wrap:break-word;"><b>Imbalance strategy</b></td><td style="padding:5px 10px; word-wrap:break-word;">Inverse-frequency class weights (all models)</td></tr>
+  <tr style="background:#f5f5f5;"><td style="padding:5px 10px; word-wrap:break-word;"><b>SMOTE</b></td><td style="padding:5px 10px; word-wrap:break-word;">Applied inside training fold only; synthetic Fatal share raised to ~10% in training</td></tr>
+  <tr><td style="padding:5px 10px; word-wrap:break-word;"><b>Primary metrics</b></td><td style="padding:5px 10px; word-wrap:break-word;">Macro-F1 and Fatal Recall (target >= 0.50)</td></tr>
+</tbody>
+</table>
 
 </div>
 </div>
@@ -312,19 +345,28 @@ ggplot(class_dist,
 speed_levels <- c("10 km/h","20 km/h","30 km/h","40 km/h","50 km/h",
                   "60 km/h","70 km/h","80 km/h","90 km/h","100 km/h","110 km/h")
 
-df_raw %>%
+speed_fatal_props <- df_raw %>%
   filter(`Speed limit` %in% speed_levels) %>%
   mutate(`Speed limit` = factor(`Speed limit`, levels = speed_levels)) %>%
   count(`Speed limit`, severity) %>%
   group_by(`Speed limit`) %>%
   mutate(prop = n / sum(n)) %>%
+  ungroup()
+
+# Find peak fatal proportion and which speed band it occurs at
+fatal_only <- speed_fatal_props %>% filter(severity == "Fatal") %>% arrange(desc(prop))
+peak_speed_label <- as.character(fatal_only$`Speed limit`[1])
+peak_fatal_pct   <- round(fatal_only$prop[1] * 100, 1)
+
+speed_fatal_props %>%
   ggplot(aes(x = `Speed limit`, y = prop, fill = severity)) +
   geom_col(position = "stack") +
   geom_hline(yintercept = 0.014, linetype = "dashed", colour = "white", linewidth = 0.8) +
   scale_fill_manual(values = c("Fatal" = "#d62728", "Injury" = "#ff7f0e", "Non-casualty" = "#2ca02c")) +
   scale_y_continuous(labels = percent_format(accuracy = 1)) +
   labs(title = "Crash Severity Proportion by Speed Limit",
-       subtitle = "Fatal proportion rises sharply at 100-110 km/h  |  dashed line = overall Fatal baseline (~1.4%)",
+       subtitle = paste0("Fatal proportion peaks at ", peak_speed_label, " (", peak_fatal_pct, "%) - over ",
+                         round(peak_fatal_pct / 1.4, 1), "x the ~1.4% baseline\nDashed line = overall Fatal baseline"),
        x = "Speed Limit", y = "Proportion of Crashes", fill = "Severity") +
   theme_minimal(base_size = 13) +
   theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position = "right")
@@ -333,13 +375,13 @@ df_raw %>%
 
 <div style="font-size:13px; margin-top:8px; display:flex; gap:24px; justify-content:center;">
 <div style="background:#fce4e4; border-left:3px solid #d62728; padding:7px 12px; flex:0 0 30%;">
-**Fatal rate at 110 km/h** is ~5x higher than at 50 km/h - the single strongest environmental predictor in the dataset.
+**Fatal proportion peaks at `r peak_speed_label`** (`r peak_fatal_pct`% of crashes at that speed are Fatal) - over `r round(peak_fatal_pct / 1.4, 1)`x the ~1.4% overall baseline. High-speed roads are the single strongest environmental risk factor.
 </div>
 <div style="background:#eaf3fb; border-left:3px solid #2E74B5; padding:7px 12px; flex:0 0 30%;">
 **50-60 km/h zones** dominate crash *volume* (urban traffic), but fatal *proportion* is low - volume and risk are decoupled.
 </div>
 <div style="background:#f0faf0; border-left:3px solid #2ca02c; padding:7px 12px; flex:0 0 30%;">
-**Motivates `speed_band`** feature: grouping ≤50 / 60-80 / 90-100 / 110 captures the non-linear jump in fatal risk.
+**Motivates `speed_band`** feature: grouping ≤50 / 60-80 / 90-100 / >100 captures the non-linear jump in fatal risk.
 </div>
 </div>
 
@@ -407,29 +449,32 @@ df_raw %>%
 ```
 </div>
 
-<div style="background:#eaf3fb; border-left:4px solid #2E74B5; padding:8px 14px; margin-top:6px; font-size:14px;">
-**Key finding:** Volume peaks at weekday commute hours, motivating <code>is_rush_hour</code> and <code>is_weekend</code> features. Fatal <em>rate</em> (not count) is elevated on weekends and late-night hours.
+<div style="display:flex; gap:10px; margin-top:6px;">
+<div style="background:#eaf3fb; border-left:4px solid #2E74B5; padding:8px 14px; font-size:14px; flex:1;">
+**Volume pattern:** Weekday commute hours (07:00-09:00, 16:00-18:00) dominate crash counts, directly motivating <code>is_rush_hour</code> and <code>is_weekend</code> as engineered features.
+</div>
+<div style="background:#fdf3e3; border-left:4px solid #ff9800; padding:8px 14px; font-size:14px; flex:1;">
+**Severity pattern:** Fatal <em>rate</em> (not count) is disproportionately elevated on weekends and late-night hours (22:00-04:00) - lower volume but higher consequence, motivating <code>is_night</code> as a key risk feature.
+</div>
 </div>
 
 ## Data Preprocessing: Pipeline
 
 
-**Steps 1-5: Cleaning & Feature Engineering**
+<p style="font-size:1.3em; font-weight:bold; margin-bottom:14px; color:#1F4E79;">Cleaning and Feature Engineering</p>
 
-1.  **TU Integration** - aggregated traffic-unit flags per crash (`has_motorcycle`, `has_heavy_vehicle`, `has_pedestrian`, `has_cyclist`) using `group_by + summarise + left_join`
-2.  **Feature removal** - dropped leakage columns (post-crash injury counts), identifiers, and variables with \>75% missing values; dropped `Degree of crash - detailed` (redundant with target)
-3.  **Imputation** - removed rows \>50% missing; categorical : `"Unknown"`; numeric : median
-4.  **Feature engineering** - `is_weekend`, `is_rush_hour`, `is_night`, `is_wet`, speed bands - all motivated by EDA findings
-5.  **Outlier handling** - NSW geographic bounds filter; winsorise `Distance` at 99th percentile
+1. **Traffic Unit Integration** - Aggregated vehicle-level records per crash into binary flags (`has_motorcycle`, `has_heavy_vehicle`, `has_pedestrian`, `has_cyclist`) via `group_by + summarise + left_join`, enabling crash-level modelling
+2. **Feature Removal** - Dropped post-crash leakage columns (injury counts), free-text identifiers, and variables with over 75% missing values; also removed `Degree of crash - detailed` as it is redundant with the target
+3. **Imputation** - Rows missing more than 50% of values were removed; remaining gaps filled with `"Unknown"` for categoricals and median for numerics to preserve sample size
+4. **Feature Engineering** - Created `is_weekend`, `is_rush_hour`, `is_night`, `is_wet`, and `speed_band` - each directly motivated by EDA findings showing their association with fatal outcomes
+5. **Outlier Handling** - Applied NSW geographic coordinate bounds to remove implausible locations; winsorised `Distance` at the 99th percentile to reduce leverage from extreme values
 
-**Steps 6-9: Modelling Setup**
+<p style="font-size:1.3em; font-weight:bold; margin-bottom:14px; margin-top:16px; color:#1F4E79;">Modelling Setup</p>
 
-<ol start="6">
-<li>**Encoding** - trees use native R `factor`; KNN/LR use one-hot; rare LGA levels : `"Other"`</li>
-<li>**Scaling** - Z-score standardisation within fold for KNN; trees are scale-invariant</li>
-<li>**Class imbalance** - inverse-frequency class weights (all models); SMOTE applied **inside training fold only**</li>
-<li>**Split** - 2024 data sealed as temporal holdout; 90/10 stratified split on 2020-2023; 5-fold CV</li>
-</ol>
+6. **Encoding** - Tree-based models use native R `factor` encoding; KNN and LR use one-hot encoding; rare LGA levels collapsed to `"Other"` to avoid high-cardinality sparsity
+7. **Scaling** - Z-score standardisation applied within each training fold for KNN; tree-based models are scale-invariant and require no scaling
+8. **Class Imbalance** - Majority classes (Injury, Non-casualty) randomly undersampled to 15,000 rows each, retaining all ~1,500 Fatal rows (`df_train_bal`, ~31,500 rows total); inverse-frequency class weights further applied for DT/RF/XGBoost; SMOTE applied **inside CV folds only** for LR and NB
+9. **Train/Test Split** - 2024 data sealed as a temporal holdout; 90/10 stratified split applied to 2020-2023 data; model selection via 5-fold cross-validation on the training set
 
 ## Data Preprocessing: Feature Engineering & Class Balancing
 
@@ -445,7 +490,7 @@ df_raw %>%
   <th style="padding:5px 10px;color:white; text-align:left;">EDA motivation</th>
 </tr></thead>
 <tbody>
-  <tr><td style="padding:7px 10px;"><code>speed_band</code></td><td style="padding:7px 10px;">Cut Speed limit: ≤50 / 60-80 / 90-100 / 110</td><td style="padding:7px 10px;">Fatal rate rises sharply above 100 km/h</td></tr>
+  <tr><td style="padding:7px 10px;"><code>speed_band</code></td><td style="padding:7px 10px;">Cut Speed limit: ≤50 / 60-80 / 90-100 / >100</td><td style="padding:7px 10px;">Fatal proportion rises sharply above 100 km/h</td></tr>
   <tr style="background:#f5f5f5;"><td style="padding:7px 10px;"><code>is_night</code></td><td style="padding:7px 10px;">Natural lighting in {Darkness, Dawn, Dusk}</td><td style="padding:7px 10px;">Dark conditions double fatal risk</td></tr>
   <tr><td style="padding:7px 10px;"><code>is_rush_hour</code></td><td style="padding:7px 10px;">Two-hour intervals in {7-9, 16-18}</td><td style="padding:7px 10px;">Commute peaks dominate crash volume</td></tr>
   <tr style="background:#f5f5f5;"><td style="padding:7px 10px;"><code>is_weekend</code></td><td style="padding:7px 10px;">Day of week in Saturday, Sunday</td><td style="padding:7px 10px;">Weekend crashes differ in severity profile</td></tr>
@@ -465,9 +510,10 @@ df_raw %>%
 </tr></thead>
 <tbody>
   <tr><td style="padding:7px 10px;">Fatal only ~1.4% of crashes</td><td style="padding:7px 10px;">Naive accuracy-maximising models predict majority class only - useless for our goal</td></tr>
-  <tr style="background:#f5f5f5;"><td style="padding:7px 10px;">Class weights (all models)</td><td style="padding:7px 10px;">Inverse-frequency weights penalise Fatal misclassification more heavily during training</td></tr>
-  <tr><td style="padding:7px 10px;">SMOTE (LR, NB)</td><td style="padding:7px 10px;">Synthetic oversampling applied inside training fold only; Fatal raised to ~10% - test set unmodified</td></tr>
-  <tr style="background:#f5f5f5;"><td style="padding:7px 10px;">Primary metrics</td><td style="padding:7px 10px;">Macro-F1 (equal weight across classes) + Fatal Recall (hard constraint: target ≥ 0.50)</td></tr>
+  <tr style="background:#f5f5f5;"><td style="padding:7px 10px;">Random undersampling (all models)</td><td style="padding:7px 10px;">Injury and Non-casualty capped at 15,000 rows each; all ~1,500 Fatal rows retained; ratio shifts from 1:47:23 to ~1:10:10</td></tr>
+  <tr><td style="padding:7px 10px;">Class weights (DT, RF, XGBoost)</td><td style="padding:7px 10px;">Inverse-frequency weights further penalise Fatal misclassification during loss computation</td></tr>
+  <tr style="background:#f5f5f5;"><td style="padding:7px 10px;">SMOTE inside CV folds (LR, NB)</td><td style="padding:7px 10px;">Synthetic oversampling applied within each training fold only - no synthetic data in validation; test set unmodified</td></tr>
+  <tr><td style="padding:7px 10px;">Primary metrics</td><td style="padding:7px 10px;">Macro-F1 (equal weight across classes) + Fatal Recall (hard constraint: target ≥ 0.50)</td></tr>
 </tbody>
 </table>
 </div>
@@ -484,16 +530,16 @@ We implemented six diverse classification models to balance interpretability and
 | **Multinomial LR** | `nnet` | SMOTE (inside CV) | `decay` (L2 Penalty) |
 | **Decision Tree** | `rpart` | Class Weights | `cp` (Complexity) |
 | **Random Forest** | `randomForest` | Class Weights | `mtry` |
-| **XGBoost** | `xgboost` | SMOTE / Weights | `nrounds`, `max_depth` |
-| **KNN** | `kknn` | SMOTE (inside CV) | `k` (Neighbors) |
+| **XGBoost** | `xgboost` | Class Weights | `nrounds`, `max_depth` |
+| **KNN** | `kknn` | Undersampling only | `k` (Neighbors) |
 | **Naive Bayes** | `naive_bayes` | SMOTE (inside CV) | `laplace`, `usekernel` |
 
 **Validation Strategy:**
-- [cite_start]**Primary Metric:** Macro-F1 (robust to class imbalance)[cite: 14].
-- [cite_start]**Constraint:** Fatal Recall $\geq$ 0.50 (safety-first approach)[cite: 50].
-- [cite_start]**Method:** 5-fold Cross-Validation (OOB for Random Forest)[cite: 49].
+- **Primary Metric:** Macro-F1 (robust to class imbalance)
+- **Constraint:** Fatal Recall $\geq$ 0.50 (safety-first approach)
+- **Method:** 5-fold Cross-Validation (OOB for Random Forest)
 
-*All models trained via `caret` with 5-fold CV. Primary metric: **Macro-F1**. Hard constraint: **Fatal Recall ≥ 0.50**.*
+*LR/DT/KNN/NB via `caret` (5-fold CV); RF uses OOB error (CV equivalent); XGBoost fitted directly via `xgb.train()`. All on `df_train_bal`. Primary metric: **Macro-F1**. Hard constraint: **Fatal Recall ≥ 0.50**.*
 
 ## Model Fitting: Logistic Regression
 
@@ -584,7 +630,7 @@ Random Forest was chosen as our **ensemble learner** - by averaging hundreds of 
 
 ## Model Fitting: XGBoost
 
-XGBoost was chosen as our **boosting-based ensemble learner** - it builds trees sequentially, where each new tree focuses on correcting the errors made by previous trees. This makes it effective for capturing complex non-linear interactions between crash conditions such as speed, lighting, road surface, location, and traffic unit type. Due to the highly imbalanced Fatal class, the model was fitted directly using `xgboost::xgb.train()` and evaluated on the held-out test set.
+XGBoost is a **boosting-based ensemble learner** that builds trees sequentially, each correcting the errors of the last. Fitted directly via `xgboost::xgb.train()` with inverse class weights to handle Fatal imbalance.
 
 <div style="display:flex; align-items:flex-start; gap:16px;">
 
@@ -592,7 +638,7 @@ XGBoost was chosen as our **boosting-based ensemble learner** - it builds trees 
 <img src="plots/5_4_xgboost_variable_importance_top15.png" style="width:100%; height:auto; display:block;"/>
 
 <p style="font-size:10.5px; text-align:left; margin-top:4px; line-height:1.3; background:#f9f9f9; padding:5px; width:100%;">
-<b>Top predictors by Gain:</b> Street lighting (Unknown/not stated dummy) dominates with 0.30 gain, nearly 5x the next predictor. Distance, pedestrian/motorcycle involvement, Latitude/Longitude, and Speed limit (100 km/h) follow. Variable names reflect one-hot expanded columns.
+<b>Top predictors by Gain:</b> Street lighting (Unknown/not stated) dominates at 0.30 gain, nearly 5x the next predictor. Distance, pedestrian/motorcycle involvement, and Speed limit (100 km/h) follow.
 </p>
 </div>
 
@@ -650,7 +696,7 @@ XGBoost was chosen as our **boosting-based ensemble learner** - it builds trees 
 
 <div style="font-size:12px; margin-top:10px; display:flex; gap:16px;">
 <div style="background:#fce4e4; border-left:3px solid #d62728; padding:7px 12px; flex:1;">
-<b>⚠ Performance Note:</b> Despite an extensive grid search over nrounds (100-500), max_depth (3-6), and eta (0.03-0.3), XGBoost produced near-trivial predictions (Kappa ≈ 0.003). The tuning curve shows all configurations converging to a narrow 0.29-0.31 Macro-F1 band with no meaningful differentiation, suggesting the model's sequential-boosting structure did not benefit from inverse class weights as intended. See Model Evaluation for a full discussion.
+<b>Performance Note:</b> Despite a grid search over nrounds, max_depth, and eta, XGBoost produced near-trivial predictions (Kappa = 0.003, Fatal Recall = 0.33). All configurations converged to the same 0.29-0.31 Macro-F1 band, suggesting sequential boosting did not interact well with inverse class weights on this dataset.
 </div>
 </div>
 
@@ -671,9 +717,9 @@ XGBoost was chosen as our **boosting-based ensemble learner** - it builds trees 
 
 ## Model Fitting: KNN
 
-<div style="display:flex; gap:22px; align-items:flex-start;">
+<div style="display:flex; gap:22px; align-items:center; height:78vh;">
 
-<div style="flex:0 0 43%; font-size:18px;">
+<div style="flex:0 0 40%; font-size:18px;">
 
 **Model Overview**
 
@@ -714,23 +760,28 @@ XGBoost was chosen as our **boosting-based ensemble learner** - it builds trees 
 
 </table>
 
-<p style="font-size:13px; margin-top:8px; background:#fff8e1; padding:6px; border-left:3px solid #f0ad4e;">
-<b>Note:</b> k = round(sqrt(p)) = 18 (p = 325 one-hot features). Fatal Recall (0.59) clears the 0.50 safety threshold, but Macro-F1 trails Random Forest because Euclidean distance treats one-hot categoricals poorly.
-</p>
+<div style="font-size:13px; margin-top:8px; display:flex; flex-direction:column; gap:6px;">
+<div style="background:#eaf3fb; border-left:3px solid #2E74B5; padding:6px 10px;">
+<b>Passes both gates:</b> Fatal Recall = 0.59 clears the 0.50 safety floor and Macro-F1 = 0.53 is competitive - but it sits 0.18 below Random Forest, with a Kappa gap of 0.21, meaning its class-level balance is substantially weaker.
+</div>
+<div style="background:#fff8e1; border-left:3px solid #f0ad4e; padding:6px 10px;">
+<b>Structural limitation:</b> With p = 325 one-hot features, Euclidean distance conflates binary dummies with continuous distances - similar crash records are not truly "close" in this space, which caps KNN's ceiling regardless of k.
+</div>
+</div>
 
 </div>
 
-<div style="flex:1;">
-<img src="plots/5_5_knn_confusion_matrix.png" style="width:100%; height:auto;"/>
+<div style="flex:0 0 58%;">
+<img src="plots/5_5_knn_confusion_matrix.png" style="width:100%; height:auto; max-height:62vh !important;"/>
 </div>
 
 </div>
 
 ## Model Fitting: Naive Bayes
 
-<div style="display:flex; gap:22px; align-items:flex-start;">
+<div style="display:flex; gap:22px; align-items:center; height:78vh;">
 
-<div style="flex:0 0 43%; font-size:18px;">
+<div style="flex:0 0 38%; font-size:18px;">
 
 **Why Naive Bayes?**
 
@@ -740,11 +791,9 @@ XGBoost was chosen as our **boosting-based ensemble learner** - it builds trees 
 
 - Fast to train on large data  
 
-- Strong sensitivity to Fatal crashes  
+- Strong sensitivity to Fatal crashes
 
-<br>
-
-<table style="font-size:15px; width:100%; border-collapse:collapse;">
+<table style="font-size:15px; width:100%; border-collapse:collapse; margin-top:6px;">
 
 <tr style="background:#2E74B5;">
   <th style="color:white; padding:4px 8px; text-align:left;">Metric</th>
@@ -773,17 +822,20 @@ XGBoost was chosen as our **boosting-based ensemble learner** - it builds trees 
 
 </table>
 
-<p style="font-size:14px; color:#111; margin-top:14px;">
-
-High Fatal Recall, but many false alarms.
-
-</p>
+<div style="font-size:13px; margin-top:8px; display:flex; flex-direction:column; gap:5px;">
+<div style="background:#fce4e4; border-left:3px solid #d62728; padding:5px 10px;">
+<b>Highest Fatal Recall (0.771) but extreme false alarms:</b> 4,133 of 5,253 actual Injury crashes predicted as Fatal, collapsing Macro-F1 to 0.243 and Kappa to 0.112.
+</div>
+<div style="background:#fff8e1; border-left:3px solid #f0ad4e; padding:5px 10px;">
+<b>Independence assumption fails:</b> Speed, lighting, and road type are correlated - NB cannot model their joint effects, forcing over-prediction of Fatal to compensate.
+</div>
+</div>
 
 </div>
 
-<div style="flex:0 0 57%; text-align:center;">
+<div style="flex:0 0 60%; text-align:center;">
 
-<img src="plots/5_6_nb_confusion_matrix.png" style="width:100%;"/>
+<img src="plots/5_6_nb_confusion_matrix.png" style="width:100%; max-height:62vh !important;"/>
 
 </div>
 
@@ -969,55 +1021,51 @@ The 0.7079 Macro-F1 is the highest among the six candidates while still meeting 
 <div style="display:flex; gap:24px; align-items:flex-start;">
 
 <!-- LEFT SIDE -->
-<div class="slide21-left" style="flex:0 0 44%; font-size:15px;">
+<div class="slide21-left" style="flex:0 0 44%; font-size:13px;">
 
-<p style="font-size:16px; font-weight:bold; margin-bottom:6px; color:#1F4E79;">Final Model Performance: 2024 Temporal Holdout</p>
+<p style="font-size:15px; font-weight:bold; margin-bottom:4px; color:#1F4E79;">Final Model Performance: 2024 Temporal Holdout</p>
 
-<ul style="font-size:13px; line-height:1.7; margin-bottom:8px;">
-<li>2024 crash records were entirely excluded from training and tuning, used solely as an unseen <b>temporal holdout</b> to simulate real deployment on future data</li>
-<li>Holdout size: <b>~35,000 records</b> at the natural class distribution (~1.4% Fatal)</li>
-<li>Compare to the model selection test set: ~13,500 records with ~6% Fatal (after undersampling)</li>
-</ul>
+<p style="font-size:12px; line-height:1.4; margin-bottom:6px;">2024 data sealed as an unseen <b>temporal holdout</b> (~35,000 records, natural ~1.4% Fatal) - compare to the test set (~13,500 records, ~6% Fatal after undersampling).</p>
 
-<table style="font-size:14px; width:100%; border-collapse:collapse; margin-bottom:10px;">
+<table style="font-size:13px; width:100%; border-collapse:collapse; margin-bottom:8px;">
 <thead>
 <tr style="background:#2E74B5;">
-  <th style="color:white; padding:5px 8px; text-align:left;">Metric</th>
-  <th style="color:white; padding:5px 8px; text-align:center;">Test Set</th>
-  <th style="color:white; padding:5px 8px; text-align:center;">2024 Holdout</th>
+  <th style="color:white; padding:4px 8px; text-align:left;">Metric</th>
+  <th style="color:white; padding:4px 8px; text-align:center;">Test Set</th>
+  <th style="color:white; padding:4px 8px; text-align:center;">2024 Holdout</th>
 </tr>
 </thead>
 <tbody>
 <tr style="background:#f2f2f2;">
-  <td style="padding:5px 8px;">Macro-F1</td>
-  <td style="padding:5px 8px; text-align:center;">0.7079</td>
-  <td style="padding:5px 8px; text-align:center;">0.334</td>
+  <td style="padding:4px 8px;">Macro-F1</td>
+  <td style="padding:4px 8px; text-align:center;">0.7079</td>
+  <td style="padding:4px 8px; text-align:center;">0.334</td>
 </tr>
 <tr>
-  <td style="padding:5px 8px; color:#d62728; font-weight:bold;">Fatal Recall</td>
-  <td style="padding:5px 8px; text-align:center; color:#d62728; font-weight:bold;">0.5106</td>
-  <td style="padding:5px 8px; text-align:center; color:#d62728; font-weight:bold;">0.106</td>
+  <td style="padding:4px 8px; color:#d62728; font-weight:bold;">Fatal Recall</td>
+  <td style="padding:4px 8px; text-align:center; color:#d62728; font-weight:bold;">0.5106</td>
+  <td style="padding:4px 8px; text-align:center; color:#d62728; font-weight:bold;">0.106</td>
 </tr>
 <tr style="background:#f2f2f2;">
-  <td style="padding:5px 8px;">Weighted F1</td>
-  <td style="padding:5px 8px; text-align:center;">0.7817</td>
-  <td style="padding:5px 8px; text-align:center;">0.572</td>
+  <td style="padding:4px 8px;">Weighted F1</td>
+  <td style="padding:4px 8px; text-align:center;">0.7817</td>
+  <td style="padding:4px 8px; text-align:center;">0.572</td>
 </tr>
 <tr>
-  <td style="padding:5px 8px;">Kappa</td>
-  <td style="padding:5px 8px; text-align:center;">0.5473</td>
-  <td style="padding:5px 8px; text-align:center;">0.037</td>
+  <td style="padding:4px 8px;">Kappa</td>
+  <td style="padding:4px 8px; text-align:center;">0.5473</td>
+  <td style="padding:4px 8px; text-align:center;">0.037</td>
 </tr>
 </tbody>
 </table>
 
-<p style="font-size:16px; font-weight:bold; margin-bottom:6px; color:#1F4E79;">Reflection</p>
+<p style="font-size:15px; font-weight:bold; margin-bottom:4px; color:#1F4E79;">Reflection</p>
 
-<ul style="font-size:13px; line-height:1.7;">
-<li><b>Fatal Recall dropped from 0.51 to 0.106</b> on the holdout, reflecting two compounding issues</li>
-<li><b>Class-proportion mismatch:</b> Training used a balanced set where Fatal was ~6% of rows; in 2024 production data, fatals are back to ~1.4% - a 4x rarer signal the model is not calibrated for</li>
-<li><b>Temporal drift:</b> Crash patterns, reporting conventions, or road infrastructure in 2024 may differ from the 2020-2023 training window in ways the model cannot anticipate</li>
-<li>Together, these show that strong test-set metrics do not guarantee robustness in real deployment, especially for rare, high-consequence events</li>
+<ul style="font-size:12px; line-height:1.5; margin-top:0; padding-left:16px;">
+<li><b>Fatal Recall: 0.51 (test) to 0.106 (holdout)</b> - two compounding causes:</li>
+<li><b>Class-proportion mismatch:</b> Model trained at ~6% Fatal; holdout is ~1.4% - a 4x rarer signal it is not calibrated for</li>
+<li><b>Temporal drift:</b> 2024 patterns may differ from the 2020-2023 training window</li>
+<li>Strong test-set metrics do not guarantee deployment robustness for rare, high-consequence events</li>
 </ul>
 
 </div>

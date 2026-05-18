@@ -281,7 +281,7 @@ Nine sequential preprocessing steps convert the raw merged dataset into `df_trai
 
 Five contextual features were engineered from existing columns: `is_weekend`, `is_rush_hour`, `is_night`, `is_wet`, and `speed_band`. Distance was winsorised at the 99th percentile and GPS coordinates outside NSW bounds were removed. LGA levels below 1% frequency were pooled into `"Other"` to reduce cardinality before factor encoding.
 
-The original Fatal:Injury:Non-casualty ratio of ~1:47:23 was far too imbalanced for reliable Fatal detection. Random undersampling was applied: all ~1,500 Fatal rows were retained while Injury and Non-casualty were each capped at 15,000, producing `df_train_bal` (~31,500 rows, ratio ~1:10:10). Undersampling was chosen over pure SMOTE because the tiny Fatal class (~770 rows after the 90/10 split) provides an unstable base for synthetic generation. Inverse-frequency class weights were added for tree-based models; SMOTE was applied inside CV folds for Logistic Regression and Naive Bayes only.
+The original Fatal:Injury:Non-casualty ratio of ~1:47:23 was far too imbalanced for reliable Fatal detection. Random undersampling was applied: all ~1,500 Fatal rows were retained while Injury and Non-casualty were each capped at 15,000, producing `df_train_bal` (~31,500 rows, ratio ~1:10:10). Undersampling was chosen over pure SMOTE (Chawla et al., 2002) because the tiny Fatal class (~770 rows after the 90/10 split) provides an unstable base for synthetic generation. Inverse-frequency class weights were added for tree-based models; SMOTE was applied inside CV folds for Logistic Regression and Naive Bayes only.
 
 Injury and Non-casualty were capped equally at 15,000 rather than sampled proportionally to their original ~47:23 ratio for two reasons. First, proportional sampling would preserve ~36,000 Injury rows against ~18,000 Non-casualty — still a 2:1 imbalance between the two majority classes, causing the model to learn the Injury/Non-casualty boundary unevenly. Equal capping ensures both majority classes are represented with comparable fidelity. Second, 15,000 per class was chosen to capture sufficient within-class diversity (each class spans varied road types, lighting, and traffic unit combinations) while keeping the total training set computationally tractable (~31,500 rows) within a single knit session.
 
@@ -2053,6 +2053,8 @@ The primary driver is **temporal distribution shift**: the model was trained on 
 ------------------------------------------------------------------------
 
 #### References
+
+<p style="font-size:14px;">Chawla, N.V., Bowyer, K.W., Hall, L.O., & Kegelmeyer, W.P. (2002). SMOTE: Synthetic Minority Over-sampling Technique. *Journal of Artificial Intelligence Research*, 16, 321–357.</p>
 
 <p style="font-size:14px;">Cover, T.M. & Hart, P.E. (1967). Nearest neighbor pattern classification. *IEEE Transactions on Information Theory*, 13(1), 21–27.</p>
 

@@ -1028,7 +1028,7 @@ The 0.7079 Macro-F1 is the highest among the six candidates while still meeting 
 
 <p style="font-size:15px; font-weight:bold; margin-bottom:4px; color:#1F4E79;">Final Model Performance: 2024 Temporal Holdout</p>
 
-<p style="font-size:12px; line-height:1.4; margin-bottom:6px;">2024 data sealed as an unseen <b>temporal holdout</b> (~35,000 records, natural ~1.4% Fatal) - the model was trained on ~31,500 records at ~6% Fatal (after undersampling: 1,500 Fatal + 15,000 Injury + 15,000 Non-casualty), a 4x higher Fatal rate than what it encounters here.</p>
+<p style="font-size:12px; line-height:1.4; margin-bottom:6px;">2024 data sealed as an unseen <b>temporal holdout</b> (~35,000 records, natural ~1.4% Fatal). The model was trained at ~6% Fatal - a 4x higher Fatal rate than it encounters here.</p>
 
 <table style="font-size:13px; width:100%; border-collapse:collapse; margin-bottom:8px;">
 <thead>
@@ -1065,8 +1065,7 @@ The 0.7079 Macro-F1 is the highest among the six candidates while still meeting 
 <p style="font-size:15px; font-weight:bold; margin-bottom:4px; color:#1F4E79;">Reflection</p>
 
 <ul style="font-size:12px; line-height:1.5; margin-top:0; padding-left:16px;">
-<li><b>Fatal Recall: 0.51 (test) to 0.097 (holdout)</b> - primary cause:</li>
-<li><b>Temporal drift:</b> 2024 crash patterns may differ from the 2020-2023 training window; the model was never exposed to 2024 conditions</li>
+<li><b>Temporal drift:</b> Fatal Recall drops from 0.51 (test) to 0.097 (holdout) - 2024 crash patterns were never seen during training</li>
 <li><b>Class-proportion mismatch:</b> Both test and holdout have natural ~1.4% Fatal, but the model was trained at ~6% Fatal (undersampled training set) - a 4x rarer signal than it was calibrated for</li>
 <li>Strong test-set metrics do not guarantee deployment robustness for rare, high-consequence events</li>
 </ul>

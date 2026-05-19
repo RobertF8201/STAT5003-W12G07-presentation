@@ -172,7 +172,7 @@ knitr::kable(justif_df, caption = "Table: Dataset Justification") |>
 ------------------------------------------------------------------------
 
 ### 3 EDA & Insights
-```{r 311-selected, fig.width=12, fig.height=4, message=FALSE, warning=FALSE}
+```{r 311-selected, fig.width=13, fig.height=8, message=FALSE, warning=FALSE}
 library(gridExtra)
 
 p1 <- ggplot(df, aes(x = fct_infreq(`Degree of crash`))) +
@@ -183,29 +183,63 @@ p1 <- ggplot(df, aes(x = fct_infreq(`Degree of crash`))) +
 
 p2 <- ggplot(df, aes(x = `Speed limit`)) +
   geom_bar(fill = "tomato") +
-  labs(title = "Distribution of Speed Limit", x = "Speed Limit", y = "Count") +
+  labs(title = "Crash Distribution by Speed Limit", x = "Speed Limit", y = "Count") +
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
 p3 <- ggplot(df, aes(x = fct_infreq(`TU type group`))) +
     geom_bar(fill = "steelblue") +
-    labs(title = "Distribution of TU Type", x = "TU Type", y = "Count") +
+    labs(title = "Crash Distribution by Traffic Unit Type", x = "Traffic Unit Type", y = "Count") +
     theme_minimal() +
     theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
 p4 <- ggplot(df, aes(x = fct_infreq(Urbanisation))) +
   geom_bar(fill = "purple") +
-  labs(title = "Distribution of Urbanisation", x = "Urbanisation", y = "Count") +
+  labs(title = "Crash Distribution by Urbanisation", x = "Urbanisation", y = "Count") +
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
 
-grid.arrange(p1, p2, p3, p4, nrow = 1)
+# Bivariate: crash severity proportion by speed limit
+df_speed_sev <- df %>%
+  filter(!is.na(`Speed limit`), !is.na(`Degree of crash`)) %>%
+  mutate(`Speed limit` = factor(`Speed limit`,
+    levels = c("10 km/h","20 km/h","30 km/h","40 km/h","50 km/h",
+               "60 km/h","70 km/h","80 km/h","90 km/h","100 km/h","110 km/h","Unknown")))
+
+p5 <- ggplot(df_speed_sev, aes(x = `Speed limit`, fill = `Degree of crash`)) +
+  geom_bar(position = "fill") +
+  scale_y_continuous(labels = scales::percent_format()) +
+  labs(title = "Severity Proportion by Speed Limit",
+       x = "Speed Limit", y = "Proportion", fill = "Severity") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        legend.key.size = unit(0.4, "cm"), legend.text = element_text(size = 8))
+
+# Bivariate: fatal rate by TU type
+tu_fatal_eda <- df %>%
+  filter(!is.na(`TU type group`), !is.na(`Degree of crash`)) %>%
+  group_by(`TU type group`) %>%
+  summarise(total = n(), fatal_rate = mean(`Degree of crash` == "Fatal"), .groups = "drop") %>%
+  filter(total >= 100) %>%
+  arrange(desc(fatal_rate))
+
+p6 <- ggplot(tu_fatal_eda, aes(x = reorder(`TU type group`, fatal_rate), y = fatal_rate)) +
+  geom_col(fill = "tomato") +
+  coord_flip() +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 0.1)) +
+  labs(title = "Fatal Rate by Traffic Unit Type",
+       x = NULL, y = "Fatal %") +
+  theme_minimal()
+
+grid.arrange(p1, p2, p3, p4, p5, p6, ncol = 3, nrow = 2)
 ```
 
-- **Crash Severity:** Fatal crashes represent only 1.4% of records - this severe class imbalance means a naive classifier predicting "Injury" for everything achieves ~65% accuracy while missing every Fatal crash; addressing imbalance is the single most important preprocessing decision for this problem.
+- **Crash Severity:** Fatal crashes represent only 1.4% of records - this severe class imbalance means a naive classifier predicting "Injury" for everything achieves ~67% accuracy while missing every Fatal crash; addressing imbalance is the single most important preprocessing decision for this problem.
 - **Speed Limit:** Crashes cluster heavily in 50-60 km/h urban zones, reflecting traffic volume rather than per-trip risk. However, high-speed zones (90-110 km/h) are likely disproportionately linked to Fatal outcomes, making speed limit a key candidate predictor of severity.
 - **Traffic Unit Type:** Car/car derivatives dominate volume (~114,477) but pedestrians and motorcycles - though rare - are strongly associated with severe and fatal outcomes. Their low frequency relative to cars reinforces the minority-class challenge and motivates the inclusion of has_pedestrian and has_motorcycle engineered flags.
 - **Urbanisation:** Sydney metro generates the most crashes (98,975) but Country non-urban regions show higher Fatal proportions despite lower volume - consistent with higher speed limits, longer emergency response times, and reduced road quality outside urban centres. This geographic signal directly motivates including LGA and Urbanisation as predictors.
+- **Severity by Speed Limit (bivariate):** Fatal proportion generally increases from low-speed urban zones (≤50 km/h) to high-speed rural zones (90-110 km/h), confirming that raw speed limit carries ordinal severity signal. This non-linear step pattern directly motivates grouping speed limits into `speed_band` (low_50 / mid_60_80 / high_90_100 / very_high_110) rather than treating the variable as unordered categorical in preprocessing (Step 4.4).
+- **Fatal Rate by TU Type (bivariate):** Pedestrians have fatal rates up to 10× higher than car occupants, and motorcyclists around 5-6× despite contributing a small share of overall volume. This confirms that TU type is among the strongest severity predictors and directly justifies engineering `has_pedestrian` and `has_motorcycle` binary flags (Step 4.1) to make these high-risk unit types explicitly visible to all classifiers.
 
 ------------------------------------------------------------------------
 
@@ -305,11 +339,12 @@ df_train_bal <- bind_rows(fatal_rows, injury_rows, noncas_rows) %>% slice_sample
 class_weights <- 1 / prop.table(table(df_train_bal$`Degree of crash`))
 class_weights <- class_weights / sum(class_weights)
 
-# CV controls (SMOTE applied inside folds for LR and NB only)
-cv_ctrl <- trainControl(
-  method = "cv", number = 5, classProbs = TRUE,
-  summaryFunction = multiClassSummary, savePredictions = "final"
-)
+# CV strategy - not all models use caret's trainControl; each uses the method best suited to its library:
+#   cv_ctrl_smote : LR (baseline + tuned), NB baseline - caret models that benefit from SMOTE inside folds
+#   rpart xval    : DT (baseline + tuned) - rpart's built-in k-fold CP pruning via xval parameter
+#   OOB error     : RF (baseline + tuned) - randomForest's out-of-bag estimate is an unbiased CV equivalent
+#   Early stopping: XGBoost - xgb.train watchlist monitors a held-out validation fold each grid iteration
+#   method="none" : KNN - no CV needed; k fixed by sqrt(p) rule (Cover & Hart, 1967); see Section 6.5
 cv_ctrl_smote <- trainControl(
   method = "cv", number = 5, classProbs = TRUE,
   summaryFunction = multiClassSummary, savePredictions = "final",
@@ -622,6 +657,7 @@ model_rf <- randomForest(
   y          = df_train_bal$`Degree of crash`,
   mtry       = floor(sqrt(ncol(rf_x_train))),
   ntree      = 100,
+  classwt    = class_weights[levels(df_train_bal$`Degree of crash`)],
   importance = TRUE
 )
 
@@ -770,9 +806,14 @@ stopifnot(!any(is.na(x_train_mm)))
 
 stopifnot(!any(is.na(x_test_mm)))
 
+# XGBoost requires per-observation weights passed directly to xgb.DMatrix - it cannot consume caret's
+# trainControl class_weights. Recalculating here from y_train_factor (derived from df_train_bal) gives
+# the same inverse-frequency weighting as the preprocessing class_weights object, just scoped to this
+# model's integer-encoded label vector. Intentionally overwrites the global class_weights name so that
+# subsequent per-obs weight vectors (obs_weights_sub, obs_weights_full) use the correct XGBoost scale.
 class_counts <- table(y_train_factor)
 
-class_weights <- sum(class_counts) /(length(class_counts) * class_counts)
+class_weights <- sum(class_counts) / (length(class_counts) * class_counts)
 
 obs_weights <- as.numeric(class_weights[y_train_factor])
 
@@ -1394,12 +1435,13 @@ p_rf_tune <- as.data.frame(tune_result) %>%
 print(p_rf_tune)
 ggsave("plots/6_3_random_forest_mtry_tuning_curve.png", p_rf_tune, width = 7, height = 5, dpi = 150)
 
-# Final tuned model fit  -  using df_train_bal (balanced), swap to df_train for final submission
+# Final tuned RF - df_train_bal (balanced) with best_mtry from tuneRF; classwt mirrors preprocessing weights
 model_rf_tuned <- randomForest(
   x          = rf_x_train,
   y          = df_train_bal$`Degree of crash`,
   mtry       = best_mtry,
   ntree      = 100,
+  classwt    = class_weights[levels(df_train_bal$`Degree of crash`)],
   importance = TRUE
 )
 
@@ -1851,7 +1893,7 @@ ggsave("plots/6_6_nb_tuning_results.png", p_nb_tune, width = 5.5, height = 4, dp
 ggsave("plots/6_6_tuned_nb_confusion_matrix.png", p_nb_tuned_cm, width = 6, height = 4, dpi = 220)
 ```
 
-```{r nb-tuning-display, echo=FALSE, results='show', fig.width=11, fig.height=4}
+```{r nb-tuning-display, echo=FALSE, results='hide', fig.show='hide', fig.width=11, fig.height=4}
 plot_grid(p_nb_tune, p_nb_tuned_cm, ncol = 2)
 ```
 

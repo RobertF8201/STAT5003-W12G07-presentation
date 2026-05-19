@@ -407,7 +407,7 @@ knitr::kable(prep_df, col.names = c("Step", "Action", "Justification"),
 - **Why not train on the full dataset?** Initial experiments with the unbalanced full training set (~140,000 rows) resulted in prohibitively long compute times per CV fold (>45 minutes per knit), making iterative experimentation impractical. Downsampling to ~31,500 rows reduced per-fold training time to a tractable level while retaining sufficient sample diversity.
 - **Equal majority-class caps (15,000 each):** Proportional downsampling would preserve a ~2:1 Injury/Non-casualty ratio within the training set, causing uneven learning of the Injury/Non-casualty boundary. Equal caps ensure both majority classes are represented with comparable fidelity.
 - **Known limitations:** Downsampling discards approximately 80% of available Injury and Non-casualty data, potentially losing rare within-class combinations that could improve boundary precision. The artificially balanced training distribution also diverges from the natural ~1.4% Fatal prevalence in deployment, which is a key driver of the generalisation drop observed in the 2024 holdout (Section 8).
-- Inverse-frequency class weights were additionally applied for tree-based models to further penalise Fatal misclassifications within the downsampled training set.
+- Inverse-frequency class weights were additionally applied to the Decision Tree to further penalise Fatal misclassifications within the downsampled training set.
 
 <!-- ------------------------------------------------------------------------ -->
 
@@ -430,7 +430,7 @@ model_sum <- data.frame(
   `Imbalance handling` = c(
     "SMOTE inside CV folds",
     "Inverse-frequency class weights",
-    "Inverse-frequency class weights",
+    "None (df_train_bal balanced; OOB controls overfitting)",
     "Inverse-frequency observation weights",
     "None (df_train_bal already balanced)",
     "SMOTE inside CV folds"
@@ -659,7 +659,6 @@ model_rf <- randomForest(
   y          = df_train_bal$`Degree of crash`,
   mtry       = floor(sqrt(ncol(rf_x_train))),
   ntree      = 100,
-  classwt    = class_weights[levels(df_train_bal$`Degree of crash`)],
   importance = TRUE
 )
 
@@ -1430,20 +1429,19 @@ p_rf_tune <- as.data.frame(tune_result) %>%
   geom_vline(xintercept = best_mtry, linetype = "dashed", colour = "#C0392B") +
   annotate("text", x = best_mtry, y = max(tune_result[, "OOBError"]),
            label = paste("Best mtry =", best_mtry),
-           hjust = -0.1, colour = "#C0392B", size = 3.5) +
+           hjust = 1.1, colour = "#C0392B", size = 3.5) +
   labs(title = "Random Forest  -  Tuning: mtry vs OOB Error",
        x = "mtry (variables randomly sampled per split)", y = "OOB Error Rate") +
   theme_minimal(base_size = 12)
 print(p_rf_tune)
 ggsave("plots/6_3_random_forest_mtry_tuning_curve.png", p_rf_tune, width = 7, height = 5, dpi = 150)
 
-# Final tuned RF - df_train_bal (balanced) with best_mtry from tuneRF; classwt mirrors preprocessing weights
+# Final tuned RF - df_train_bal (balanced) with best_mtry from tuneRF
 model_rf_tuned <- randomForest(
   x          = rf_x_train,
   y          = df_train_bal$`Degree of crash`,
   mtry       = best_mtry,
   ntree      = 100,
-  classwt    = class_weights[levels(df_train_bal$`Degree of crash`)],
   importance = TRUE
 )
 
@@ -1608,7 +1606,7 @@ p_xgb_tune_curve <- xgb_tune_results %>%
   ggplot(aes(x = factor(max_depth), y = Mean_F1, fill = eta_lbl)) +
   geom_col(position = "dodge") +
   geom_text(aes(label = round(Mean_F1, 3)), position = position_dodge(0.9),
-            vjust = -0.4, size = 3) +
+            vjust = 1.4, size = 2.6, colour = "white", fontface = "bold") +
   scale_fill_brewer(palette = "Blues", direction = 1) +
   labs(title = "XGBoost Tuning: Mean-F1 by max_depth & eta (early stopping)",
        x = "max_depth", y = "Validation Mean-F1", fill = "Learning rate") +

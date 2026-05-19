@@ -202,10 +202,10 @@ p4 <- ggplot(df, aes(x = fct_infreq(Urbanisation))) +
 grid.arrange(p1, p2, p3, p4, nrow = 1)
 ```
 
-- **Crash Severity:** Fatal crashes represent only 1.4% of records, indicating severe class imbalance that must be addressed during modelling.
-- **Speed Limit:** Crashes are heavily concentrated in 50-60 km/h urban zones, reflecting higher traffic volume rather than elevated per-trip risk.
-- **Traffic Unit Type:** Car/car derivatives dominate (~114,477), with pedestrians and motorcycles being rare but disproportionately associated with severe outcomes.
-- **Urbanisation:** Sydney metro accounts for the most crashes (98,975), while Country non-urban regions show higher fatal proportions despite lower overall volume.
+- **Crash Severity:** Fatal crashes represent only 1.4% of records - this severe class imbalance means a naive classifier predicting "Injury" for everything achieves ~65% accuracy while missing every Fatal crash; addressing imbalance is the single most important preprocessing decision for this problem.
+- **Speed Limit:** Crashes cluster heavily in 50-60 km/h urban zones, reflecting traffic volume rather than per-trip risk. However, high-speed zones (90-110 km/h) are likely disproportionately linked to Fatal outcomes, making speed limit a key candidate predictor of severity.
+- **Traffic Unit Type:** Car/car derivatives dominate volume (~114,477) but pedestrians and motorcycles - though rare - are strongly associated with severe and fatal outcomes. Their low frequency relative to cars reinforces the minority-class challenge and motivates the inclusion of has_pedestrian and has_motorcycle engineered flags.
+- **Urbanisation:** Sydney metro generates the most crashes (98,975) but Country non-urban regions show higher Fatal proportions despite lower volume - consistent with higher speed limits, longer emergency response times, and reduced road quality outside urban centres. This geographic signal directly motivates including LGA and Urbanisation as predictors.
 
 ------------------------------------------------------------------------
 
@@ -337,7 +337,7 @@ prep_df <- data.frame(
     "Winsorise Distance at 99th pct; filter GPS outside NSW bounds",
     "Pool LGA levels <1% frequency into 'Other'; encode all characters as factors",
     "Deferred to per-model step - KNN uses caret preProcess = c('center','scale')",
-    "Retain all ~1,500 Fatal rows; undersample Injury & Non-casualty to 15,000 each -> ~31,500 rows",
+    "Retain all ~770 Fatal rows; downsample Injury & Non-casualty to 15,000 each -> ~31,500 rows (ratio ~1:10:10)",
     "90/10 stratified split on 2020-2023; 2024 sealed as temporal holdout"
   ),
   Justification = c(
@@ -362,7 +362,15 @@ knitr::kable(prep_df, col.names = c("Step", "Action", "Justification"),
   kableExtra::column_spec(3, width = "43%")
 ```
 
-Undersampling was chosen over pure SMOTE (Chawla et al., 2002) because the Fatal class has only ~770 training rows after the 90/10 split - too few for stable synthetic generation. Inverse-frequency class weights were added for tree-based models; SMOTE was applied inside CV folds for LR and NB only. Both majority classes were capped equally at 15,000 (rather than proportionally) to avoid preserving a secondary 2:1 Injury/Non-casualty imbalance.
+**Imbalance strategy - random downsampling:**
+
+- The raw 2020-2023 training split has a Fatal:Injury:Non-casualty ratio of approximately 1:47:23. Training directly on this distribution causes models to optimise for the majority classes and almost entirely ignore the Fatal minority, producing near-zero Fatal Recall on the test set.
+- **Random downsampling** (retaining all ~770 Fatal rows, capping Injury and Non-casualty at 15,000 each) was chosen as the primary rebalancing strategy. The resulting ~31,500-row balanced frame (`df_train_bal`) reduces the ratio to approximately 1:10:10 - still imbalanced in favour of majority classes, but a significant improvement over 1:47.
+- **Why not SMOTE?** Synthetic oversampling (Chawla et al., 2002) requires a sufficiently dense neighbourhood around minority-class points to generate plausible synthetic examples. With only ~770 Fatal rows spanning a wide range of road types, lighting conditions, and geographic locations, the neighbourhood structure is too sparse for reliable synthesis - SMOTE was applied inside CV folds for LR and NB only as a secondary measure.
+- **Why not train on the full dataset?** Initial experiments with the unbalanced full training set (~140,000 rows) resulted in prohibitively long compute times per CV fold (>45 minutes per knit), making iterative experimentation impractical. Downsampling to ~31,500 rows reduced per-fold training time to a tractable level while retaining sufficient sample diversity.
+- **Equal majority-class caps (15,000 each):** Proportional downsampling would preserve a ~2:1 Injury/Non-casualty ratio within the training set, causing uneven learning of the Injury/Non-casualty boundary. Equal caps ensure both majority classes are represented with comparable fidelity.
+- **Known limitations:** Downsampling discards approximately 80% of available Injury and Non-casualty data, potentially losing rare within-class combinations that could improve boundary precision. The artificially balanced training distribution also diverges from the natural ~1.4% Fatal prevalence in deployment, which is a key driver of the generalisation drop observed in the 2024 holdout (Section 8).
+- Inverse-frequency class weights were additionally applied for tree-based models to further penalise Fatal misclassifications within the downsampled training set.
 
 <!-- ------------------------------------------------------------------------ -->
 
@@ -449,12 +457,14 @@ p_lr_cm <- as.data.frame(cm_lr$table) %>%
   geom_text(aes(label = Freq), size = 6, fontface = "bold") +
   scale_fill_gradient(low = "white", high = "#1F4E79") +
   labs(
-    title = "Logistic Regression  -  Confusion Matrix (Test Set)",
+    title = "Logistic Regression - Confusion Matrix",
     subtitle = paste0("Fatal Recall: ", round(fatal_recall_lr, 3),
-                      "  |  Macro-F1: ", round(macro_f1_lr, 3))
+                      "  |  Macro-F1: ", round(macro_f1_lr, 3)),
+    x = "Actual", y = "Predicted"
   ) +
   theme_minimal(base_size = 12) +
-  theme(legend.position = "none")
+  theme(legend.position = "none",
+        plot.title = element_text(size = 10))
 print(p_lr_cm)
 ggsave("plots/5_1_logistic_regression_confusion_matrix.png", p_lr_cm, width = 7, height = 5, dpi = 150)
 
@@ -578,12 +588,14 @@ p_dt_cm <- as.data.frame(cm_dt$table) %>%
   geom_text(aes(label = Freq), size = 6, fontface = "bold") +
   scale_fill_gradient(low = "white", high = "#1F4E79") +
   labs(
-    title = "Decision Tree  -  Confusion Matrix (Test Set)",
+    title = "Decision Tree - Confusion Matrix",
     subtitle = paste0("Fatal Recall: ", round(fatal_recall_dt, 3),
-                      "  |  Macro-F1: ", round(macro_f1_dt, 3))
+                      "  |  Macro-F1: ", round(macro_f1_dt, 3)),
+    x = "Actual", y = "Predicted"
   ) +
   theme_minimal(base_size = 12) +
-  theme(legend.position = "none")
+  theme(legend.position = "none",
+        plot.title = element_text(size = 10))
 print(p_dt_cm)
 ggsave("plots/5_2_decision_tree_confusion_matrix.png", p_dt_cm, width = 7, height = 5, dpi = 150)
 ```
@@ -633,11 +645,13 @@ p_rf_cm <- as.data.frame(cm_rf$table) %>%
   geom_tile(colour = "white") +
   geom_text(aes(label = Freq), size = 6, fontface = "bold") +
   scale_fill_gradient(low = "white", high = "#1F4E79") +
-  labs(title = "Random Forest : Confusion Matrix (Test Set)",
+  labs(title = "Random Forest - Confusion Matrix",
        subtitle = paste0("Fatal Recall: ", round(fatal_recall_rf, 3),
-                         "  |  Macro-F1: ", round(macro_f1_rf, 3))) +
+                         "  |  Macro-F1: ", round(macro_f1_rf, 3)),
+       x = "Actual", y = "Predicted") +
   theme_minimal(base_size = 12) +
-  theme(legend.position = "none")
+  theme(legend.position = "none",
+        plot.title = element_text(size = 10))
 print(p_rf_cm)
 ggsave("plots/5_3_random_forest_confusion_matrix.png", p_rf_cm, width = 7, height = 5, dpi = 150)
 
@@ -853,16 +867,16 @@ p_xgb_cm <- as.data.frame(cm_xgb$table) %>% ggplot(aes(x = Reference, y = Predic
   geom_text(aes(label = Freq), size = 6, fontface = "bold") +
   scale_fill_gradient(low = "white", high = "#1F4E79") +
   labs(
-    title = "XGBoost: Confusion Matrix (Test Set)",
+    title = "XGBoost - Confusion Matrix",
     subtitle = paste0(
       "Fatal Recall: ", round(fatal_recall_xgb, 3),
       "  |  Macro-F1: ", round(macro_f1_xgb, 3)
     ),
-    x = "Actual Class",
-    y = "Predicted Class"
+    x = "Actual", y = "Predicted"
   ) +
   theme_minimal(base_size = 12) +
-  theme(legend.position = "none")
+  theme(legend.position = "none",
+        plot.title = element_text(size = 10))
 
 dir.create("plots", showWarnings = FALSE)
 
@@ -965,12 +979,14 @@ p_knn_cm <- as.data.frame(cm_knn$table) %>%
   geom_text(aes(label = Freq), size = 6, fontface = "bold") +
   scale_fill_gradient(low = "white", high = "#1F4E79") +
   labs(
-    title    = paste0("KNN (k=", k_knn, ", sqrt(p))  -  Confusion Matrix (Test Set)"),
+    title    = paste0("KNN (k=", k_knn, ") - Confusion Matrix"),
     subtitle = paste0("Fatal Recall: ", round(fatal_recall_knn, 3),
-                      "  |  Macro-F1: ", round(macro_f1_knn, 3))
+                      "  |  Macro-F1: ", round(macro_f1_knn, 3)),
+    x = "Actual", y = "Predicted"
   ) +
   theme_minimal(base_size = 12) +
-  theme(legend.position = "none")
+  theme(legend.position = "none",
+        plot.title = element_text(size = 10))
 print(p_knn_cm)
 ggsave("plots/5_5_knn_confusion_matrix.png", p_knn_cm, width = 7, height = 5, dpi = 150)
 ```
@@ -1096,13 +1112,14 @@ p_nb_cm <- ggplot(cm_nb_df, aes(x = Reference, y = Prediction, fill = Freq)) +
   geom_text(aes(label = Freq), size = 3.5) +
   scale_fill_gradient(low = "white", high = "steelblue") +
   labs(
-    title = "Naive Bayes Confusion Matrix",
-    subtitle = paste0("Fatal Recall = ", round(fatal_recall_nb, 3)),
-    x = "Actual Class",
-    y = "Predicted Class",
+    title = "Naive Bayes - Confusion Matrix",
+    subtitle = paste0("Fatal Recall: ", round(fatal_recall_nb, 3),
+                      "  |  Macro-F1: ", round(macro_f1_nb, 3)),
+    x = "Actual", y = "Predicted",
     fill = "Count"
   ) +
-  theme_minimal()
+  theme_minimal() +
+  theme(plot.title = element_text(size = 10))
 
 p_nb_cm
 ggsave("plots/5_6_nb_confusion_matrix.png", p_nb_cm, width = 7, height = 5, dpi = 150)
@@ -1148,7 +1165,16 @@ knitr::kable(
   kableExtra::column_spec(3, color = "#C0392B")
 ```
 
-Random Forest leads on Macro-F1 (0.7029) but **narrowly fails** the Fatal Recall constraint at baseline (0.47 < 0.50); this is resolved by tuning in Section 6. At baseline, **KNN is the only model to simultaneously satisfy both constraints** (Macro-F1 = 0.53, Fatal Recall = 0.59). XGBoost fails the Fatal Recall floor (0.33), with a Kappa near zero indicating near-random three-class discrimination. LR, DT, and NB all exceed the Fatal Recall floor but remain below Macro-F1 = 0.45, reflecting aggressive over-prediction of the Fatal class at the expense of precision on Injury and Non-casualty.
+**Safety constraint (Fatal Recall ≥ 0.50):**
+
+- **Fail - XGBoost** (Fatal Recall = `r round(fatal_recall_xgb, 3)`): collapses to near-random discrimination (Kappa = `r round(kappa_xgb, 4)`); the one-hot expansion of high-cardinality categoricals interacts poorly with the inverse-frequency weighting scheme
+- **Fail - Random Forest** (Fatal Recall = `r round(as.numeric(fatal_recall_rf), 3)`): narrowly misses the floor at baseline despite leading all models on Macro-F1 (`r round(macro_f1_rf, 3)`) and Kappa (`r round(as.numeric(kappa_rf), 3)`); addressed by mtry tuning in Section 6
+
+**Models that pass the safety floor:**
+
+- **LR** (Fatal Recall = `r round(fatal_recall_lr, 3)`) and **DT** (Fatal Recall = `r round(fatal_recall_dt, 3)`): high recall at the cost of Macro-F1 (`r round(macro_f1_lr, 3)` and `r round(macro_f1_dt, 3)` respectively) - both over-predict Fatal, producing many false alarms in Injury and Non-casualty
+- **NB** (Fatal Recall = `r round(as.numeric(fatal_recall_nb), 3)`): passes the floor but achieves the lowest Macro-F1 (`r round(macro_f1_nb, 3)`) and Weighted F1 (`r round(weighted_f1_nb, 3)`) of all models; conditional independence assumption is badly violated in this dataset
+- **KNN** (Fatal Recall = `r round(fatal_recall_knn, 3)`, Macro-F1 = `r round(macro_f1_knn, 3)`): the only baseline model to satisfy **both** constraints simultaneously; distributes predictions across all three classes more evenly than the parametric models
 
 ```{r cm-grid, echo=TRUE, results='show', fig.width=14, fig.height=9}
 plot_grid(p_lr_cm, p_dt_cm, p_rf_cm,
@@ -1158,7 +1184,12 @@ plot_grid(p_lr_cm, p_dt_cm, p_rf_cm,
           label_size = 11)
 ```
 
-The matrices confirm the split: RF and KNN distribute predictions across all three classes with reasonable balance. LR, DT, and NB concentrate predictions in the Fatal row - high recall but a large number of false alarms in non-fatal classes. XGBoost does the opposite, collapsing nearly all predictions into Injury and Non-casualty and missing almost every Fatal crash.
+**Confusion matrix patterns:**
+
+- **RF & KNN** distribute predictions across all three classes with reasonable balance - diagonal cells are the strongest in each row, indicating genuine multi-class discrimination
+- **LR, DT & NB** concentrate predictions heavily in the Fatal predicted row - high diagonal recall for Fatal but large off-diagonal counts spilling into Injury and Non-casualty (false alarms), which suppresses precision and F1 for those classes
+- **XGBoost** shows the opposite pathology: the Fatal predicted row is nearly empty while Injury absorbs the vast majority of predictions - it effectively defaults to a two-class Injury/Non-casualty separator and almost entirely misses Fatal crashes
+- **NB** has an unusual pattern: it achieves high Fatal Recall but its Weighted F1 (`r round(weighted_f1_nb, 3)`) and Kappa (`r round(as.numeric(kappa_nb), 3)`) are the worst of all models, confirming that its high recall comes at the cost of severely misclassifying Injury and Non-casualty instances
 
 ------------------------------------------------------------------------
 
@@ -1240,12 +1271,14 @@ p_lr_tuned_cm <- as.data.frame(cm_lr_tuned$table) %>%
   geom_text(aes(label = Freq), size = 6, fontface = "bold") +
   scale_fill_gradient(low = "white", high = "#1F4E79") +
   labs(
-    title = "Logistic Regression (Tuned)  -  Confusion Matrix (Test Set)",
+    title = "Logistic Regression (Tuned) - Confusion Matrix",
     subtitle = paste0("Fatal Recall: ", round(fatal_recall_lr_tuned, 3),
-                      "  |  Macro-F1: ", round(macro_f1_lr_tuned, 3))
+                      "  |  Macro-F1: ", round(macro_f1_lr_tuned, 3)),
+    x = "Actual", y = "Predicted"
   ) +
   theme_minimal(base_size = 12) +
-  theme(legend.position = "none")
+  theme(legend.position = "none",
+        plot.title = element_text(size = 10))
 ggsave("plots/6_1_logistic_regression_tuned_confusion_matrix.png", p_lr_tuned_cm, width = 7, height = 5, dpi = 150)
 ```
 
@@ -1316,12 +1349,14 @@ p_dt_tuned_cm <- as.data.frame(cm_dt_tuned$table) %>%
   geom_text(aes(label = Freq), size = 6, fontface = "bold") +
   scale_fill_gradient(low = "white", high = "#1F4E79") +
   labs(
-    title = "Decision Tree (Tuned)  -  Confusion Matrix (Test Set)",
+    title = "Decision Tree (Tuned) - Confusion Matrix",
     subtitle = paste0("Fatal Recall: ", round(fatal_recall_dt_tuned, 3),
-                      "  |  Macro-F1: ", round(macro_f1_dt_tuned, 3))
+                      "  |  Macro-F1: ", round(macro_f1_dt_tuned, 3)),
+    x = "Actual", y = "Predicted"
   ) +
   theme_minimal(base_size = 12) +
-  theme(legend.position = "none")
+  theme(legend.position = "none",
+        plot.title = element_text(size = 10))
 print(p_dt_tuned_cm)
 ggsave("plots/6_2_decision_tree_tuned_confusion_matrix.png", p_dt_tuned_cm, width = 7, height = 5, dpi = 150)
 ```
@@ -1407,11 +1442,13 @@ p_rf_tuned_cm <- as.data.frame(cm_rf_tuned$table) %>%
   geom_tile(colour = "white") +
   geom_text(aes(label = Freq), size = 6, fontface = "bold") +
   scale_fill_gradient(low = "white", high = "#1F4E79") +
-  labs(title = "Random Forest (Tuned)  -  Confusion Matrix (Test Set)",
+  labs(title = "Random Forest (Tuned) - Confusion Matrix",
        subtitle = paste0("Fatal Recall: ", round(fatal_recall_tuned, 3),
-                         "  |  Macro-F1: ", round(macro_f1_tuned, 3))) +
+                         "  |  Macro-F1: ", round(macro_f1_tuned, 3)),
+       x = "Actual", y = "Predicted") +
   theme_minimal(base_size = 12) +
-  theme(legend.position = "none")
+  theme(legend.position = "none",
+        plot.title = element_text(size = 10))
 print(p_rf_tuned_cm)
 ggsave("plots/6_3_random_forest_tuned_confusion_matrix.png", p_rf_tuned_cm, width = 7, height = 5, dpi = 150)
 ```
@@ -1643,16 +1680,24 @@ p_xgb_tuned_cm <- as.data.frame(cm_xgb_tuned$table) %>%
   geom_text(aes(label = Freq), size = 6, fontface = "bold") +
   scale_fill_gradient(low = "white", high = "#1F4E79") +
   labs(
-    title = "XGBoost (Tuned)  -  Confusion Matrix (Test Set)",
+    title = "XGBoost (Tuned) - Confusion Matrix",
     subtitle = paste0("Fatal Recall: ", round(fatal_recall_xgb_tuned, 3),
-                      "  |  Macro-F1: ", round(macro_f1_xgb_tuned, 3))
+                      "  |  Macro-F1: ", round(macro_f1_xgb_tuned, 3)),
+    x = "Actual", y = "Predicted"
   ) +
   theme_minimal(base_size = 12) +
-  theme(legend.position = "none")
+  theme(legend.position = "none",
+        plot.title = element_text(size = 10))
 ggsave("plots/6_4_xgboost_tuned_confusion_matrix.png", p_xgb_tuned_cm, width = 7, height = 5, dpi = 150)
 ```
 
-> **6.5 KNN:** No additional tuning - $k = \lfloor\sqrt{p}\rfloor$ is both the baseline and final model; metrics from Section 5 are reused directly.
+#### 6.5 KNN - No Additional Tuning
+
+KNN was not subjected to grid search or cross-validated tuning. The primary reason is computational: repeated distance computations over a ~31,500 $\times$ `r p_knn` one-hot encoded matrix scale as $O(n \cdot p)$ per query point, making 5-fold CV over even a modest $k$-grid prohibitively slow within a single knit session.
+
+Instead, $k = \lfloor\sqrt{p}\rfloor = `r k_knn`$ was set directly by a well-established rule of thumb. As $n \to \infty$ with $k/n \to 0$, the KNN error rate converges to twice the Bayes error rate (Cover & Hart, 1967). Choosing $k \propto \sqrt{p}$ balances the bias-variance trade-off across the feature dimensionality: a small $k$ overfits to local noise in the high-dimensional OHE space, while a large $k$ over-smooths class boundaries and loses sensitivity to the rare Fatal class. Hastie, Tibshirani & Friedman (2009, §13.3) endorse this heuristic as a practical starting point when the training set size and dimensionality are of comparable order, which is the case here.
+
+Accordingly, the baseline metrics from Section 5 (Macro-F1 = `r round(macro_f1_knn, 3)`, Fatal Recall = `r round(fatal_recall_knn, 3)`) are carried forward as the final tuned KNN results.
 
 #### 6.6 Naive Bayes - Laplace smoothing
 
@@ -1788,15 +1833,16 @@ p_nb_tuned_cm <- ggplot(
   geom_text(aes(label = Freq), size = 3) +
   scale_fill_gradient(low = "white", high = "steelblue") +
   labs(
-    title = "Tuned NB Confusion Matrix",
-    subtitle = paste0("Fatal Recall = ", round(fatal_recall_nb_tuned, 3)),
+    title = "Naive Bayes (Tuned) - Confusion Matrix",
+    subtitle = paste0("Fatal Recall: ", round(fatal_recall_nb_tuned, 3),
+                      "  |  Macro-F1: ", round(macro_f1_nb_tuned, 3)),
     x = "Actual",
     y = "Predicted",
     fill = "Count"
   ) +
   theme_minimal(base_size = 10) +
   theme(
-    plot.title = element_text(size = 11, face = "bold"),
+    plot.title = element_text(size = 10),
     plot.subtitle = element_text(size = 9),
     legend.position = "right"
   )
@@ -1806,10 +1852,14 @@ ggsave("plots/6_6_tuned_nb_confusion_matrix.png", p_nb_tuned_cm, width = 6, heig
 ```
 
 ```{r nb-tuning-display, echo=FALSE, results='show', fig.width=11, fig.height=4}
-plot_grid(p_nb_tune, p_nb_tuned_cm, ncol = 2, labels = c("Tuning", "CM"), label_size = 10)
+plot_grid(p_nb_tune, p_nb_tuned_cm, ncol = 2)
 ```
 
-> **Note on k selection:** KNN was not tuned via CV or grid search due to the high computational cost of repeated distance computations on a ~31,500 × `r p_knn` one-hot matrix. Instead, $k = \lfloor\sqrt{p}\rfloor$ was set by a well-established rule of thumb: as $n \to \infty$ with $k/n \to 0$, the KNN error rate converges to twice the Bayes error rate (Cover & Hart, 1967). Choosing $k \propto \sqrt{p}$ specifically balances variance (small $k$ overfits to noise) against bias (large $k$ over-smooths class boundaries) across the feature dimensionality (Hastie, Tibshirani & Friedman, 2009, §13.3).
+**NB tuning observations:**
+
+- CV log-loss is near-identical across all three Laplace values (0, 0.5, 1), indicating the smoothing parameter has negligible effect on this dataset - the model's behaviour is dominated by the conditional independence assumption violation, not zero-probability cells
+- The tuned CM confirms the same over-recall pathology as baseline: the Fatal row captures a large proportion of predictions, while the Injury class is severely under-predicted (only 412 correct Injury predictions vs. thousands misclassified as Non-casualty)
+- **Laplace = 0** selected as best by Mean-F1 CV; NB is carried forward but remains the weakest model in the tuned comparison
 
 ```{r tuning-table, echo=TRUE, results='asis'}
 tuning_compare <- data.frame(
@@ -1867,7 +1917,14 @@ plot_grid(p_lr_tune, p_dt_tune, p_rf_tune,
           label_size = 11)
 ```
 
-RF benefited most from tuning: increasing `mtry` from 6 to 13 lifted Macro-F1 by +0.005 and pushed Fatal Recall above the 0.50 safety floor (+0.04 absolute gain). LR and DT showed modest improvements; XGBoost remained below the Fatal Recall floor despite exhaustive grid search, confirming a structural mismatch between its weighted-loss configuration and the high-cardinality one-hot-encoded categorical features in this dataset.
+**Tuning outcomes by model:**
+
+- **Logistic Regression:** Best decay = `r best_decay`; the tuning curve shows a clear peak at this value with performance dropping at both lower (no regularisation, overfitting) and higher (over-penalised, underfitting) decay values. Macro-F1 and Fatal Recall both improve marginally - LR is already well-regularised by SMOTE inside CV folds
+- **Decision Tree:** CV error decreases steadily with more splits before flattening; best CP = `r signif(best_cp, 3)` selected at the elbow. Pruning prevents the deep tree from over-fitting to the balanced training set, producing small gains in both metrics
+- **Random Forest:** The largest absolute improvement of any model - increasing `mtry` from `r floor(sqrt(ncol(rf_x_train)))` to `r best_mtry` lifted Macro-F1 by +0.007 and pushed Fatal Recall from `r round(as.numeric(fatal_recall_rf), 3)` to `r round(as.numeric(fatal_recall_tuned), 3)`, clearing the 0.50 safety floor. The OOB error curve confirms stability at 100 trees
+- **XGBoost:** All six grid combinations cluster tightly in the 0.27-0.30 Macro-F1 range with no setting producing Fatal Recall ≥ 0.50; depth and learning rate have minimal effect on the structural limitation (poor Fatal class separation under OHE + inverse-frequency weighting)
+- **KNN:** No tuning performed; $k = \lfloor\sqrt{p}\rfloor$ rule used (see Section 6.5)
+- **Naive Bayes:** Flat log-loss curve across Laplace values confirms the bottleneck is model assumption violation, not hyperparameter choice
 
 ------------------------------------------------------------------------
 
@@ -1899,42 +1956,54 @@ knitr::kable(metric_defs, caption = "Table: Evaluation Metric Definitions") |>
 ```
 
 ```{r evaluation-table, echo=TRUE, results='asis', message=FALSE, warning=FALSE}
-eval_tbl <- data.frame(
-  Model = c("Logistic Regression", "Decision Tree", "Random Forest",
-            "XGBoost", paste0("KNN (k=", k_knn, ")"), "Naive Bayes"),
-  `Macro-F1`     = round(c(macro_f1_lr_tuned, macro_f1_dt_tuned,
-                            as.numeric(macro_f1_tuned),
-                            macro_f1_xgb_tuned, macro_f1_knn,
-                            macro_f1_nb_tuned), 4),
-  `Fatal Recall` = round(c(fatal_recall_lr_tuned, fatal_recall_dt_tuned,
-                            as.numeric(fatal_recall_tuned),
-                            fatal_recall_xgb_tuned, fatal_recall_knn,
-                            as.numeric(fatal_recall_nb_tuned)), 4),
-  `Weighted F1`  = round(c(weighted_f1_lr_tuned, weighted_f1_dt_tuned,
-                            as.numeric(weighted_f1_tuned),
-                            weighted_f1_xgb_tuned, weighted_f1_knn,
-                            weighted_f1_nb_tuned), 4),
-  `Kappa`        = round(c(kappa_lr_tuned, kappa_dt_tuned,
-                            as.numeric(kappa_tuned),
-                            kappa_xgb_tuned, kappa_knn,
-                            as.numeric(kappa_nb_tuned)), 4),
-  `Meets >= 0.50` = ifelse(
-    round(c(fatal_recall_lr_tuned, fatal_recall_dt_tuned,
-            as.numeric(fatal_recall_tuned), fatal_recall_xgb_tuned,
-            fatal_recall_knn, as.numeric(fatal_recall_nb_tuned)), 4) >= 0.50,
-    "Yes", "No"),
-  check.names = FALSE
+# Build tuned metrics vectors
+fr_tuned <- round(c(fatal_recall_lr_tuned, fatal_recall_dt_tuned,
+                    as.numeric(fatal_recall_tuned), fatal_recall_xgb_tuned,
+                    fatal_recall_knn, as.numeric(fatal_recall_nb_tuned)), 4)
+mf1_tuned <- round(c(macro_f1_lr_tuned, macro_f1_dt_tuned,
+                     as.numeric(macro_f1_tuned), macro_f1_xgb_tuned,
+                     macro_f1_knn, macro_f1_nb_tuned), 4)
+passes <- fr_tuned >= 0.50
+
+# Rank passing models by Macro-F1; non-passing get "-"
+rank_vec <- rep("-", 6)
+passing_idx <- which(passes)
+rank_order  <- passing_idx[order(mf1_tuned[passing_idx], decreasing = TRUE)]
+rank_vec[rank_order] <- seq_along(rank_order)
+
+decision_vec <- rep("Eliminated (Fatal Recall < 0.50)", 6)
+decision_vec[passes & mf1_tuned < 0.50] <- "Pass constraint; low Macro-F1"
+decision_vec[passes & mf1_tuned >= 0.50] <- "Dual-pass"
+decision_vec[which.max(mf1_tuned * passes)] <- "Selected"
+
+sel_tbl <- data.frame(
+  Model         = c("Logistic Regression", "Decision Tree", "Random Forest",
+                    "XGBoost", paste0("KNN (k=", k_knn, ")"), "Naive Bayes"),
+  `Macro-F1`    = mf1_tuned,
+  `Fatal Recall`= fr_tuned,
+  `Weighted F1` = round(c(weighted_f1_lr_tuned, weighted_f1_dt_tuned,
+                           as.numeric(weighted_f1_tuned), weighted_f1_xgb_tuned,
+                           weighted_f1_knn, weighted_f1_nb_tuned), 4),
+  Kappa         = round(c(kappa_lr_tuned, kappa_dt_tuned,
+                           as.numeric(kappa_tuned), kappa_xgb_tuned,
+                           kappa_knn, as.numeric(kappa_nb_tuned)), 4),
+  Rank          = rank_vec,
+  Decision      = decision_vec,
+  check.names   = FALSE
 )
 
-knitr::kable(eval_tbl, align = c("l", "r", "r", "r", "r", "c"),
-             caption = "Table: Tuned Model Performance on the Test Set") |>
-  kableExtra::kable_styling(full_width = FALSE, position = "left",
-                            bootstrap_options = c("striped", "condensed"),
-                            font_size = 12) |>
+selected_row <- which(sel_tbl$Decision == "Selected")
+
+knitr::kable(sel_tbl, align = c("l", "r", "r", "r", "r", "c", "l"),
+             caption = "Table: Model Selection - Tuned Performance and Decision") |>
+  kableExtra::kable_styling(full_width = TRUE,
+                            bootstrap_options = c("condensed"), font_size = 12) |>
   kableExtra::row_spec(0, bold = TRUE, background = "#2E74B5", color = "white") |>
-  kableExtra::row_spec(3, bold = TRUE, background = "#eaf3fb") |>
+  kableExtra::row_spec(selected_row, bold = TRUE, background = "#D5E8D4",
+                       color = "#1a5c1a") |>
   kableExtra::column_spec(1, bold = TRUE) |>
-  kableExtra::column_spec(3, color = "#d62728")
+  kableExtra::column_spec(3, color = "#d62728") |>
+  kableExtra::column_spec(7, bold = TRUE)
 ```
 
 **Group 1 - Safety floor failure (Fatal Recall < 0.50):**
@@ -1951,6 +2020,23 @@ knitr::kable(eval_tbl, align = c("l", "r", "r", "r", "r", "c"),
 - **KNN** satisfies both constraints but with modest margins (Macro-F1 ~0.53, Kappa ~0.34).
 - **Random Forest** dominates across every metric: leads KNN by +0.18 on Macro-F1, +0.11 on Weighted F1, and +0.21 on Kappa. The ranking is robust to metric choice (class-balanced, prevalence-weighted, or chance-adjusted). **Random Forest is the selected final model.**
 
+**Tuned confusion matrices:**
+
+```{r tuned-cm-grid, echo=FALSE, results='show', fig.width=14, fig.height=9}
+plot_grid(p_lr_tuned_cm, p_dt_tuned_cm, p_rf_tuned_cm,
+          p_xgb_tuned_cm, p_knn_cm, p_nb_tuned_cm,
+          ncol = 3, nrow = 2,
+          labels = c("LR", "DT", "RF", "XGBoost", "KNN", "NB"),
+          label_size = 11)
+```
+
+**Tuned CM observations:**
+
+- **RF (tuned):** The diagonal is now the dominant cell in every row - Fatal, Injury, and Non-casualty predictions each concentrate on the correct class. This is the most balanced CM in the grid and directly reflects the high Macro-F1 (`r round(as.numeric(macro_f1_tuned), 3)`) and cleared Fatal Recall floor (`r round(as.numeric(fatal_recall_tuned), 3)`)
+- **KNN:** Similar diagonal structure to RF but with weaker separation on Non-casualty - KNN over-predicts Injury for many Non-casualty instances, explaining the ~0.17 Macro-F1 gap relative to RF
+- **LR & DT (tuned):** Tuning made no structural change to the prediction pattern - the Fatal predicted row continues to absorb large proportions of Injury and Non-casualty instances. Both models remain high-recall safety nets, not balanced classifiers
+- **XGBoost (tuned):** The Fatal predicted row is near-empty even after tuning; virtually all predictions collapse into Injury. Kappa (`r round(kappa_xgb_tuned, 3)`) confirms near-random three-class discrimination
+- **NB (tuned):** High Fatal Recall (`r round(as.numeric(fatal_recall_nb_tuned), 3)`) but the Injury predicted row is severely under-populated - most Injury instances are pushed to Non-casualty. This directly explains the lowest Weighted F1 (`r round(weighted_f1_nb_tuned, 3)`) and Kappa (`r round(as.numeric(kappa_nb_tuned), 3)`) of all tuned models
 
 ------------------------------------------------------------------------
 
@@ -2101,13 +2187,14 @@ p_rf_2024_cm <- ggplot(
   geom_text(aes(label = Freq), size = 3.5) +
   scale_fill_gradient(low = "white", high = "steelblue") +
   labs(
-    title = "Tuned Random Forest on 2024 Holdout",
-    subtitle = paste0("Fatal Recall = ", round(fatal_recall_2024, 3)),
-    x = "Actual Class",
-    y = "Predicted Class",
+    title = "RF (Tuned) - 2024 Holdout Confusion Matrix",
+    subtitle = paste0("Fatal Recall: ", round(fatal_recall_2024, 3),
+                      "  |  Macro-F1: ", round(macro_f1_2024, 3)),
+    x = "Actual", y = "Predicted",
     fill = "Count"
   ) +
-  theme_minimal()
+  theme_minimal() +
+  theme(plot.title = element_text(size = 10))
 
 p_rf_2024_cm
 
@@ -2133,7 +2220,7 @@ knitr::kable(
   kableExtra::column_spec(1, bold = TRUE)
 ```
 
-This project evaluated six classifiers for NSW road crash severity prediction across 2020-2024 data. The tuned Random Forest was the best performer on the 2020-2023 test set (Macro-F1 = `r round(as.numeric(macro_f1_tuned), 3)`, Fatal Recall = `r round(as.numeric(fatal_recall_tuned), 3)`). The holdout confusion matrix and top-15 variable importance are shown side by side below.
+**Model selection:** Tuned Random Forest was selected as the final model based on test-set performance (Macro-F1 = `r round(as.numeric(macro_f1_tuned), 3)`, Fatal Recall = `r round(as.numeric(fatal_recall_tuned), 3)`). It was the only model to satisfy both the Macro-F1 > 0.50 and Fatal Recall ≥ 0.50 constraints simultaneously, and led all other models by >0.18 on Macro-F1 and >0.21 on Kappa. The holdout confusion matrix and top-15 variable importance are shown below.
 
 ```{r holdout-cm-varimp, echo=TRUE, results='show', fig.width=13, fig.height=5}
 imp_df_final <- as.data.frame(importance(model_rf_tuned, type = 1))
@@ -2148,13 +2235,42 @@ p_varimp_final <- imp_df_final %>%
        x = NULL, y = "Mean Decrease in Accuracy") +
   theme_minimal(base_size = 11)
 
-plot_grid(p_rf_2024_cm, p_varimp_final, ncol = 2, rel_widths = c(1, 1.2),
-          labels = c("Holdout CM", "Variable Importance"), label_size = 10)
+plot_grid(p_rf_2024_cm, p_varimp_final, ncol = 2, rel_widths = c(1, 1.2))
 ```
 
-Applying the tuned Random Forest to the unseen 2024 holdout reveals a sharp generalisation drop. **Fatal Recall collapsed from `r round(as.numeric(fatal_recall_tuned), 3)` to `r round(as.numeric(fatal_recall_2024), 3)`** - meaning only 51 of 528 actual Fatal crashes were correctly identified; the remaining 477 (90%) were misclassified as Injury. Macro-F1 fell from `r round(as.numeric(macro_f1_tuned), 3)` to `r round(macro_f1_2024, 3)`, and Cohen's Kappa dropped to `r round(as.numeric(kappa_2024), 3)`, indicating near-chance agreement on the three-class task. Weighted F1 (`r round(weighted_f1_2024, 3)`) remains deceptively high because the Injury class dominates the holdout and the model predicts Injury for almost everything.
+**Holdout performance (2024 unseen data):**
 
-The primary driver is **temporal distribution shift**: the model was trained on 2020–2023 crash patterns (balanced via undersampling) but the 2024 holdout reflects its natural class distribution (~1.4% Fatal). The RF's decision boundaries - calibrated on an artificially balanced training set - no longer generalise to the skewed 2024 distribution. Additionally, the top predictors (Street lighting, LGA, Key TU type) are sensitive to infrastructure and reporting changes that evolve year-on-year. Future work should address this through periodic retraining on rolling windows, probability threshold calibration for Fatal, and including year/trend features to explicitly model temporal drift.
+- Fatal Recall collapsed from `r round(as.numeric(fatal_recall_tuned), 3)` (test set) to `r round(as.numeric(fatal_recall_2024), 3)` - only `r round(as.numeric(fatal_recall_2024) * 100, 1)`% of actual Fatal crashes correctly identified; the rest were misclassified as Injury
+- Macro-F1 fell from `r round(as.numeric(macro_f1_tuned), 3)` to `r round(macro_f1_2024, 3)`; Kappa dropped to `r round(as.numeric(kappa_2024), 3)` (near-chance agreement)
+- Weighted F1 (`r round(weighted_f1_2024, 3)`) is deceptively high - the model predicts Injury for almost everything, and Injury dominates the 2024 holdout
+
+**Why generalisation failed:**
+
+- **Temporal distribution shift** - training used a balanced set (1:10:10 ratio) but 2024 holdout reflects the natural ~1:47:23 distribution; decision boundaries trained on the balanced set do not transfer
+- **Top predictors are time-sensitive** - Street lighting, LGA, and Key TU type shift with infrastructure upgrades and reporting practice changes year-on-year
+- **No recalibration** - predicted probabilities were not threshold-calibrated for the Fatal class; the default 0.33 threshold is too high given 1.4% natural prevalence
+
+**Variable importance findings:**
+
+- Street lighting and LGA dominate importance, suggesting crash severity in NSW is strongly tied to infrastructure quality and geographic context
+- Temporal features (Month, Day of week, Two-hour intervals) appear in the top 15, confirming time-of-day and seasonal patterns carry predictive signal
+- Speed limit ranks lower than expected - likely because most crashes cluster in 50-60 km/h zones, reducing its discriminative power
+
+**Limitations:**
+
+- Undersampling discards ~80% of majority-class rows, reducing the information available for learning Injury/Non-casualty boundaries
+- Euclidean distance on OHE features (used by KNN) is a known limitation for high-cardinality categorical data
+- Model was trained on a static 2020-2023 window with no temporal trend features
+
+**Future work:**
+
+- Rolling-window retraining (e.g., retrain annually on most recent 3 years) to track distribution drift
+- Probability threshold calibration for the Fatal class to recover recall under natural class prevalence
+- Explore crash-level aggregation strategies and time-series features to explicitly model year-on-year trends
+
+**Answer to the research question:**
+
+Given environmental conditions and traffic unit characteristics, can we predict NSW road crash severity as a three-class problem (Fatal / Injury / Non-casualty)? **Partially yes.** The tuned Random Forest achieves strong discrimination on the 2020-2023 test set (Macro-F1 = `r round(as.numeric(macro_f1_tuned), 3)`, Fatal Recall = `r round(as.numeric(fatal_recall_tuned), 3)`), demonstrating that the chosen predictor set carries genuine signal for separating severity classes. However, the sharp generalisation drop on the 2024 holdout (Fatal Recall = `r round(as.numeric(fatal_recall_2024), 3)`) shows that prediction is sensitive to temporal distribution shift and cannot yet be considered reliable for deployment without periodic retraining and threshold recalibration.
 
 ------------------------------------------------------------------------
 

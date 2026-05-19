@@ -1,8 +1,8 @@
 ---
 title: "NSW Road Crash Severity Prediction"
-subtitle: "STAT5003  -  Group 07, Workshop 12"
+subtitle: "STAT5003  -  Assignment 2 Group 07, Workshop 12"
 author: "Sanskar | Robert | Haipeng | Chen | Yihan"
-date: "May 2026"
+date: "22 May 2026"
 output:
   html_document:
     code_folding: hide
@@ -107,6 +107,8 @@ knitr::kable(stakeholder_df, caption = "Table: Stakeholder Value") |>
 ### 2 Dataset & Justification
 
 #### 2.1 Dataset Overview
+
+Two source tables from Transport for NSW were merged via left join on `Crash ID`: **CRASH.xlsx** provides crash-level context (time, location, environment, speed limit) across 92,189 unique incidents, while **TRAFFIC UNIT.xlsx** contributes per-vehicle attributes (unit type, manoeuvre, controlled flag) across 170,962 traffic unit records. The merged dataset therefore contains one row per traffic unit, enabling vehicle-specific features to enrich crash severity prediction alongside crash-level environmental factors. The three-class target — Fatal, Injury, and Non-casualty — is severely imbalanced, with Fatal crashes representing only ~1.4% of all records; this imbalance is the central modelling challenge addressed throughout Sections 4–7.
 
 ```{r dataset-overview, echo=FALSE, message=FALSE, warning=FALSE}
 overview <- data.frame(
@@ -1896,12 +1898,6 @@ ggsave("plots/6_6_tuned_nb_confusion_matrix.png", p_nb_tuned_cm, width = 6, heig
 ```{r nb-tuning-display, echo=FALSE, results='hide', fig.show='hide', fig.width=11, fig.height=4}
 plot_grid(p_nb_tune, p_nb_tuned_cm, ncol = 2)
 ```
-
-**NB tuning observations:**
-
-- CV log-loss is near-identical across all three Laplace values (0, 0.5, 1), indicating the smoothing parameter has negligible effect on this dataset - the model's behaviour is dominated by the conditional independence assumption violation, not zero-probability cells
-- The tuned CM confirms the same over-recall pathology as baseline: the Fatal row captures a large proportion of predictions, while the Injury class is severely under-predicted (only 412 correct Injury predictions vs. thousands misclassified as Non-casualty)
-- **Laplace = 0** selected as best by Mean-F1 CV; NB is carried forward but remains the weakest model in the tuned comparison
 
 ```{r tuning-table, echo=TRUE, results='asis'}
 tuning_compare <- data.frame(

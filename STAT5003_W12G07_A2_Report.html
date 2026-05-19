@@ -11,6 +11,7 @@
 
 <meta name="author" content="Sanskar | Robert | Haipeng | Chen | Yihan" />
 
+<meta name="date" content="2026-05-22" />
 
 <title>NSW Road Crash Severity Prediction</title>
 
@@ -662,9 +663,9 @@ display: none;
 
 
 <h1 class="title toc-ignore">NSW Road Crash Severity Prediction</h1>
-<h3 class="subtitle">STAT5003 - Group 07, Workshop 12</h3>
+<h3 class="subtitle">STAT5003 - Assignment 2 Group 07, Workshop 12</h3>
 <h4 class="author">Sanskar | Robert | Haipeng | Chen | Yihan</h4>
-<h4 class="date">May 2026</h4>
+<h4 class="date">22 May 2026</h4>
 
 </div>
 
@@ -795,6 +796,18 @@ policy and pricing models
 <h3>2 Dataset &amp; Justification</h3>
 <div id="dataset-overview" class="section level4">
 <h4>2.1 Dataset Overview</h4>
+<p>Two source tables from Transport for NSW were merged via left join on
+<code>Crash ID</code>: <strong>CRASH.xlsx</strong> provides crash-level
+context (time, location, environment, speed limit) across 92,189 unique
+incidents, while <strong>TRAFFIC UNIT.xlsx</strong> contributes
+per-vehicle attributes (unit type, manoeuvre, controlled flag) across
+170,962 traffic unit records. The merged dataset therefore contains one
+row per traffic unit, enabling vehicle-specific features to enrich crash
+severity prediction alongside crash-level environmental factors. The
+three-class target — Fatal, Injury, and Non-casualty — is severely
+imbalanced, with Fatal crashes representing only ~1.4% of all records;
+this imbalance is the central modelling challenge addressed throughout
+Sections 4–7.</p>
 </div>
 <div id="why-this-dataset" class="section level4">
 <h4>2.2 Why this dataset?</h4>
@@ -2992,20 +3005,6 @@ p_nb_tuned_cm &lt;- ggplot(
 
 ggsave(&quot;plots/6_6_nb_tuning_results.png&quot;, p_nb_tune, width = 5.5, height = 4, dpi = 220)
 ggsave(&quot;plots/6_6_tuned_nb_confusion_matrix.png&quot;, p_nb_tuned_cm, width = 6, height = 4, dpi = 220)</code></pre>
-<p><strong>NB tuning observations:</strong></p>
-<ul>
-<li>CV log-loss is near-identical across all three Laplace values (0,
-0.5, 1), indicating the smoothing parameter has negligible effect on
-this dataset - the model’s behaviour is dominated by the conditional
-independence assumption violation, not zero-probability cells</li>
-<li>The tuned CM confirms the same over-recall pathology as baseline:
-the Fatal row captures a large proportion of predictions, while the
-Injury class is severely under-predicted (only 412 correct Injury
-predictions vs. thousands misclassified as Non-casualty)</li>
-<li><strong>Laplace = 0</strong> selected as best by Mean-F1 CV; NB is
-carried forward but remains the weakest model in the tuned
-comparison</li>
-</ul>
 <pre class="r"><code>tuning_compare &lt;- data.frame(
   Model = c(&quot;Logistic Regression&quot;, &quot;Decision Tree&quot;, &quot;Random Forest&quot;,
             &quot;XGBoost&quot;, &quot;KNN&quot;, &quot;Naive Bayes&quot;),

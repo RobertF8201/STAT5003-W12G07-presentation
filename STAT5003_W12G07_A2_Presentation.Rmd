@@ -566,7 +566,7 @@ Logistic regression served as our **interpretable baseline** model. It helps sho
 </table>
 
 <p style="font-size:11px; text-align:left; margin:0; line-height:1.2; background:#f9f9f9; padding:6px; ">
-  <b>Key message:</b> High coefficients for <b>Pedestrians</b>, <b>Night-time</b>, and <b>Non-urban</b> areas prove our baseline LR successfully prioritises the minority class.
+  <b>Key message:</b> Logistic Regression highlights several interpretable signals associated with crash severity, including <b>pedestrian involvement</b>, <b>street-lighting conditions</b>, and <b>impact type</b>, showing that the baseline model captures meaningful structure in the data.
 </p>
 </div>
 </div>

@@ -93,7 +93,7 @@ stakeholder_df <- data.frame(
   ),
   check.names = FALSE
 )
-knitr::kable(stakeholder_df, caption = "Table: Stakeholder Value") |>
+knitr::kable(stakeholder_df, caption = "Table 1: Stakeholder Value") |>
   kableExtra::kable_styling(full_width = TRUE,
                             bootstrap_options = c("condensed"), font_size = 11) |>
   kableExtra::row_spec(0, bold = TRUE, background = "#2E74B5", color = "white") |>
@@ -108,7 +108,7 @@ knitr::kable(stakeholder_df, caption = "Table: Stakeholder Value") |>
 
 #### 2.1 Dataset Overview
 
-Two source tables from Transport for NSW were merged via left join on `Crash ID`: **CRASH.xlsx** provides crash-level context (time, location, environment, speed limit) across 92,189 unique incidents, while **TRAFFIC UNIT.xlsx** contributes per-vehicle attributes (unit type, manoeuvre, controlled flag) across 170,962 traffic unit records. The merged dataset therefore contains one row per traffic unit, enabling vehicle-specific features to enrich crash severity prediction alongside crash-level environmental factors. The three-class target — Fatal, Injury, and Non-casualty — is severely imbalanced, with Fatal crashes representing only ~1.4% of all records; this imbalance is the central modelling challenge addressed throughout Sections 4–7.
+Two source tables from Transport for NSW were merged via left join on `Crash ID`: **CRASH.xlsx** provides crash-level context (time, location, environment, speed limit) across 92,189 unique incidents, while **TRAFFIC UNIT.xlsx** contributes per-vehicle attributes (unit type, manoeuvre, controlled flag) across 170,962 traffic unit records. The merged dataset therefore contains one row per traffic unit, enabling vehicle-specific features to enrich crash severity prediction alongside crash-level environmental factors. The three-class target (Fatal, Injury, and Non-casualty) is severely imbalanced, with Fatal crashes representing only ~1.4% of all records, making this imbalance the central modelling challenge addressed throughout Sections 4–7.
 
 ```{r dataset-overview, echo=FALSE, message=FALSE, warning=FALSE}
 overview <- data.frame(
@@ -140,7 +140,7 @@ overview <- data.frame(
 )
 
 knitr::kable(overview, col.names = c("Item", "Detail"),
-             caption = "Table 1: Dataset Overview")
+             caption = "Table 2: Dataset Overview")
 ```
 
 #### 2.2 Why this dataset?
@@ -162,7 +162,7 @@ justif_df <- data.frame(
   ),
   check.names = FALSE
 )
-knitr::kable(justif_df, caption = "Table: Dataset Justification") |>
+knitr::kable(justif_df, caption = "Table 2: Dataset Justification") |>
   kableExtra::kable_styling(full_width = TRUE,
                             bootstrap_options = c("condensed"), font_size = 11) |>
   kableExtra::row_spec(0, bold = TRUE, background = "#2E74B5", color = "white") |>
@@ -236,7 +236,7 @@ p6 <- ggplot(tu_fatal_eda, aes(x = reorder(`TU type group`, fatal_rate), y = fat
 grid.arrange(p1, p2, p3, p4, p5, p6, ncol = 3, nrow = 2)
 ```
 
-- **Crash Severity:** Fatal crashes represent only 1.4% of records - this severe class imbalance means a naive classifier predicting "Injury" for everything achieves ~67% accuracy while missing every Fatal crash; addressing imbalance is the single most important preprocessing decision for this problem.
+- **Crash Severity:** Fatal crashes represent only 1.4% of records - this severe class imbalance means a naive classifier predicting "Injury" for everything achieves ~67% accuracy while missing every Fatal crash, making addressing imbalance the single most important preprocessing decision for this problem.
 - **Speed Limit:** Crashes cluster heavily in 50-60 km/h urban zones, reflecting traffic volume rather than per-trip risk. However, high-speed zones (90-110 km/h) are likely disproportionately linked to Fatal outcomes, making speed limit a key candidate predictor of severity.
 - **Traffic Unit Type:** Car/car derivatives dominate volume (~114,477) but pedestrians and motorcycles - though rare - are strongly associated with severe and fatal outcomes. Their low frequency relative to cars reinforces the minority-class challenge and motivates the inclusion of has_pedestrian and has_motorcycle engineered flags.
 - **Urbanisation:** Sydney metro generates the most crashes (98,975) but Country non-urban regions show higher Fatal proportions despite lower volume - consistent with higher speed limits, longer emergency response times, and reduced road quality outside urban centres. This geographic signal directly motivates including LGA and Urbanisation as predictors.
@@ -247,7 +247,7 @@ grid.arrange(p1, p2, p3, p4, p5, p6, ncol = 3, nrow = 2)
 
 ### 4 Data Preprocessing
 
-All data-dependent steps are performed **within cross-validation folds** to prevent data leakage (James et al., 2021).
+Steps 4.1–4.6 (integration, feature removal, imputation, feature engineering, outlier handling, and encoding) are applied to the **full dataset before** the train/test split. Downsampling to `df_train_bal` is applied to the **training partition only**, after the split. SMOTE oversampling (LR and NB) is applied **within cross-validation folds** to prevent resampling leakage. Feature scaling for KNN is applied to the full training set via caret's `preProcess`, as KNN uses a direct fit with no CV (James et al., 2021).
 
 ```{r preprocessing-all, echo=TRUE, results='hide'}
 # 4.1 Data Integration
@@ -322,9 +322,7 @@ df_model <- df_clean %>%
            levels = c("Fatal", "Injury", "Non-casualty (towaway)"),
            labels = c("Fatal", "Injury", "Non_casualty")))
 
-# 4.7 Scaling - deferred to per-model preprocessing (KNN uses caret preProcess = c("center","scale"))
-
-# 4.8 Class Imbalance - 2024 sealed as temporal holdout; undersample Injury/Non-casualty to 15k each
+# 4.7 Class Imbalance - 2024 sealed as temporal holdout; undersample Injury/Non-casualty to 15k each
 df_holdout_2024  <- df_model %>% filter(`Reporting year` == 2024)
 df_model_2020_23 <- df_model %>% filter(`Reporting year` != 2024)
 set.seed(42)
@@ -342,7 +340,7 @@ class_weights <- 1 / prop.table(table(df_train_bal$`Degree of crash`))
 class_weights <- class_weights / sum(class_weights)
 
 # CV strategy - not all models use caret's trainControl; each uses the method best suited to its library:
-#   cv_ctrl_smote : LR (baseline + tuned), NB baseline - caret models that benefit from SMOTE inside folds
+#   cv_ctrl_smote : LR (baseline + tuned), NB (baseline + tuned) - SMOTE applied inside each CV fold
 #   rpart xval    : DT (baseline + tuned) - rpart's built-in k-fold CP pruning via xval parameter
 #   OOB error     : RF (baseline + tuned) - randomForest's out-of-bag estimate is an unbiased CV equivalent
 #   Early stopping: XGBoost - xgb.train watchlist monitors a held-out validation fold each grid iteration
@@ -353,7 +351,7 @@ cv_ctrl_smote <- trainControl(
   sampling = "smote"
 )
 
-# 4.9 Train/Test Split
+# 4.8 Train/Test Split
 cat("Train (balanced):", nrow(df_train_bal),
     "| Test:", nrow(df_test),
     "| Holdout (2024):", nrow(df_holdout_2024), "\n")
@@ -365,7 +363,7 @@ print(prop.table(table(df_train_bal$`Degree of crash`)))
 prep_df <- data.frame(
   Step = c("4.1 Integration", "4.2 Feature removal", "4.3 Imputation",
            "4.4 Feature engineering", "4.5 Outlier handling", "4.6 Encoding",
-           "4.7 Scaling", "4.8 Class imbalance", "4.9 Train/test split"),
+           "4.7 Class imbalance", "4.8 Train/test split"),
   Action = c(
     "Aggregate traffic-unit rows into per-crash binary flags (has_motorcycle, has_pedestrian, etc.)",
     "Drop leakage cols (injury counts), identifiers, free-text fields, cols >50% missing",
@@ -373,8 +371,7 @@ prep_df <- data.frame(
     "Derive is_weekend, is_rush_hour, is_night, is_wet, speed_band from existing columns",
     "Winsorise Distance at 99th pct; filter GPS outside NSW bounds",
     "Pool LGA levels <1% frequency into 'Other'; encode all characters as factors",
-    "Deferred to per-model step - KNN uses caret preProcess = c('center','scale')",
-    "Retain all ~770 Fatal rows; downsample Injury & Non-casualty to 15,000 each, giving ~31,500 rows (ratio ~1:10:10)",
+    "Retain all ~770 Fatal rows; downsample Injury & Non-casualty to 15,000 each, giving ~31,500 rows (ratio ~1:10:10). SMOTE oversampling (LR, NB) is applied within CV folds. KNN scaling is applied to the full training set (no CV, direct fit).",
     "90/10 stratified split on 2020-2023; 2024 sealed as temporal holdout"
   ),
   Justification = c(
@@ -384,13 +381,12 @@ prep_df <- data.frame(
     "Time-of-day and surface context not directly available as numeric features",
     "A few extreme distances and erroneous coordinates would distort distance-based models",
     "Reduces LGA cardinality from ~150 to manageable levels before OHE",
-    "Tree models are scale-invariant; only KNN requires normalisation",
     "1:47:23 ratio too extreme for Fatal detection; equal majority-class caps avoid secondary 2:1 imbalance",
     "Temporal split prevents future data leaking into training; stratification preserves Fatal proportion"
   )
 )
 knitr::kable(prep_df, col.names = c("Step", "Action", "Justification"),
-             caption = "Table: Preprocessing Pipeline") |>
+             caption = "Table 3: Preprocessing Pipeline") |>
   kableExtra::kable_styling(full_width = TRUE,
                             bootstrap_options = c("condensed"), font_size = 11) |>
   kableExtra::row_spec(0, bold = TRUE, background = "#2E74B5", color = "white") |>
@@ -401,19 +397,19 @@ knitr::kable(prep_df, col.names = c("Step", "Action", "Justification"),
 
 **Imbalance strategy - random downsampling:**
 
-- The raw 2020-2023 training split has a Fatal:Injury:Non-casualty ratio of approximately 1:47:23. Training directly on this distribution causes models to optimise for the majority classes and almost entirely ignore the Fatal minority, producing near-zero Fatal Recall on the test set.
+- **The raw 2020-2023 training split has a Fatal**:Injury:Non-casualty ratio of approximately 1:47:23. Training directly on this distribution causes models to optimise for the majority classes and almost entirely ignore the Fatal minority, producing near-zero Fatal Recall on the test set.
 - **Random downsampling** (retaining all ~770 Fatal rows, capping Injury and Non-casualty at 15,000 each) was chosen as the primary rebalancing strategy. The resulting ~31,500-row balanced frame (`df_train_bal`) reduces the ratio to approximately 1:10:10 - still imbalanced in favour of majority classes, but a significant improvement over 1:47.
 - **Why not SMOTE?** Synthetic oversampling (Chawla et al., 2002) requires a sufficiently dense neighbourhood around minority-class points to generate plausible synthetic examples. With only ~770 Fatal rows spanning a wide range of road types, lighting conditions, and geographic locations, the neighbourhood structure is too sparse for reliable synthesis - SMOTE was applied inside CV folds for LR and NB only as a secondary measure.
 - **Why not train on the full dataset?** Initial experiments with the unbalanced full training set (~140,000 rows) resulted in prohibitively long compute times per CV fold (>45 minutes per knit), making iterative experimentation impractical. Downsampling to ~31,500 rows reduced per-fold training time to a tractable level while retaining sufficient sample diversity.
 - **Equal majority-class caps (15,000 each):** Proportional downsampling would preserve a ~2:1 Injury/Non-casualty ratio within the training set, causing uneven learning of the Injury/Non-casualty boundary. Equal caps ensure both majority classes are represented with comparable fidelity.
 - **Known limitations:** Downsampling discards approximately 80% of available Injury and Non-casualty data, potentially losing rare within-class combinations that could improve boundary precision. The artificially balanced training distribution also diverges from the natural ~1.4% Fatal prevalence in deployment, which is a key driver of the generalisation drop observed in the 2024 holdout (Section 8).
-- Inverse-frequency class weights were additionally applied to the Decision Tree to further penalise Fatal misclassifications within the downsampled training set.
+- **Inverse-frequency class weights** were additionally applied to the Decision Tree to further penalise Fatal misclassifications within the downsampled training set.
 
 <!-- ------------------------------------------------------------------------ -->
 
 ### 5 Model Fitting
 
-Six classifiers were fitted to cover a range of complexity and interpretability - from a parametric baseline (Logistic Regression) through tree ensembles (Decision Tree, Random Forest, XGBoost) to distance- and probability-based models (KNN, Naive Bayes). All models train on the same `df_train_bal` (~31,500 rows) and are evaluated on the same held-out test set; cross-model differences therefore reflect genuine algorithmic variation rather than data preparation differences.
+Six classifiers were fitted to cover a range of complexity and interpretability - from a parametric baseline (Logistic Regression) through tree ensembles (Decision Tree, Random Forest, XGBoost) to distance- and probability-based models (KNN, Naive Bayes). All models train on the same `df_train_bal` (~31,500 rows) and are evaluated on the same held-out test set, so cross-model differences reflect genuine algorithmic variation rather than data preparation differences.
 
 ```{r model-summary-table, echo=FALSE, results='asis'}
 model_sum <- data.frame(
@@ -437,7 +433,7 @@ model_sum <- data.frame(
   ),
   check.names = FALSE
 )
-knitr::kable(model_sum, caption = "Table: Model Summary") |>
+knitr::kable(model_sum, caption = "Table 4: Model Summary") |>
   kableExtra::kable_styling(full_width = TRUE,
                             bootstrap_options = c("condensed"), font_size = 11) |>
   kableExtra::row_spec(0, bold = TRUE, background = "#2E74B5", color = "white") |>
@@ -1193,7 +1189,7 @@ knitr::kable(
   results_display,
   col.names = c("Model", "Macro-F1", "Fatal Recall", "Weighted F1", "Kappa", "Fatal Recall ≥ 0.50"),
   align = c("l", "r", "r", "r", "r", "c"),
-  caption = "Table: Baseline Model Performance on the Test Set"
+  caption = "Table 5: Baseline Model Performance on the Test Set"
 ) |>
   kableExtra::kable_styling(
     full_width = FALSE,
@@ -1209,14 +1205,14 @@ knitr::kable(
 
 **Safety constraint (Fatal Recall ≥ 0.50):**
 
-- **Fail - XGBoost** (Fatal Recall = `r round(fatal_recall_xgb, 3)`): collapses to near-random discrimination (Kappa = `r round(kappa_xgb, 4)`); the one-hot expansion of high-cardinality categoricals interacts poorly with the inverse-frequency weighting scheme
-- **Fail - Random Forest** (Fatal Recall = `r round(as.numeric(fatal_recall_rf), 3)`): narrowly misses the floor at baseline despite leading all models on Macro-F1 (`r round(macro_f1_rf, 3)`) and Kappa (`r round(as.numeric(kappa_rf), 3)`); addressed by mtry tuning in Section 6
+- **Fail - XGBoost** (Fatal Recall = `r round(fatal_recall_xgb, 3)`): collapses to near-random discrimination (Kappa = `r round(kappa_xgb, 4)`), with the one-hot expansion of high-cardinality categoricals interacting poorly with the inverse-frequency weighting scheme
+- **Fail - Random Forest** (Fatal Recall = `r round(as.numeric(fatal_recall_rf), 3)`): narrowly misses the floor at baseline despite leading all models on Macro-F1 (`r round(macro_f1_rf, 3)`) and Kappa (`r round(as.numeric(kappa_rf), 3)`), addressed by mtry tuning in Section 6
 
 **Models that pass the safety floor:**
 
 - **LR** (Fatal Recall = `r round(fatal_recall_lr, 3)`) and **DT** (Fatal Recall = `r round(fatal_recall_dt, 3)`): high recall at the cost of Macro-F1 (`r round(macro_f1_lr, 3)` and `r round(macro_f1_dt, 3)` respectively) - both over-predict Fatal, producing many false alarms in Injury and Non-casualty
-- **NB** (Fatal Recall = `r round(as.numeric(fatal_recall_nb), 3)`): passes the floor but achieves the lowest Macro-F1 (`r round(macro_f1_nb, 3)`) and Weighted F1 (`r round(weighted_f1_nb, 3)`) of all models; conditional independence assumption is badly violated in this dataset
-- **KNN** (Fatal Recall = `r round(fatal_recall_knn, 3)`, Macro-F1 = `r round(macro_f1_knn, 3)`): the only baseline model to satisfy **both** constraints simultaneously; distributes predictions across all three classes more evenly than the parametric models
+- **NB** (Fatal Recall = `r round(as.numeric(fatal_recall_nb), 3)`): passes the floor but achieves the lowest Macro-F1 (`r round(macro_f1_nb, 3)`) and Weighted F1 (`r round(weighted_f1_nb, 3)`) of all models, as the conditional independence assumption is badly violated in this dataset
+- **KNN** (Fatal Recall = `r round(fatal_recall_knn, 3)`, Macro-F1 = `r round(macro_f1_knn, 3)`): the only baseline model to satisfy **both** constraints simultaneously, distributing predictions across all three classes more evenly than the parametric models
 
 ```{r cm-grid, echo=TRUE, results='show', fig.width=14, fig.height=9}
 plot_grid(p_lr_cm, p_dt_cm, p_rf_cm,
@@ -1229,15 +1225,15 @@ plot_grid(p_lr_cm, p_dt_cm, p_rf_cm,
 **Confusion matrix patterns:**
 
 - **RF & KNN** distribute predictions across all three classes with the diagonal cell dominant in every row, indicating genuine multi-class discrimination rather than collapsing to a majority-class default
-- **LR, DT & NB** achieve high Fatal Recall by aggressively predicting Fatal — the Fatal predicted row contains a large share of misclassified Injury and Non-casualty instances (poor Fatal precision), which suppresses per-class F1 and drags down Macro-F1
-- **XGBoost** spreads predictions roughly equally across all three classes but with very low accuracy in each row, producing near-random discrimination (Kappa ≈ `r round(kappa_xgb, 3)`) — the one-hot expansion of high-cardinality categoricals appears to interact poorly with the inverse-frequency weighting scheme
+- **LR, DT & NB** achieve high Fatal Recall by aggressively predicting Fatal, with the Fatal predicted row containing a large share of misclassified Injury and Non-casualty instances (poor Fatal precision), which suppresses per-class F1 and drags down Macro-F1
+- **XGBoost** spreads predictions roughly equally across all three classes but with very low accuracy in each row, producing near-random discrimination (Kappa ≈ `r round(kappa_xgb, 3)`), suggesting the one-hot expansion of high-cardinality categoricals interacts poorly with the inverse-frequency weighting scheme
 - **NB** achieves high Fatal Recall but its Weighted F1 (`r round(weighted_f1_nb, 3)`) is the lowest of all models, confirming that its high recall comes at the cost of severely misclassifying Injury and Non-casualty instances
 
 ------------------------------------------------------------------------
 
 ### 6 Model Improvement
 
-Each model's primary hyperparameter was tuned using the same 5-fold CV framework from Section 4: L2 weight decay for LR, CP pruning for DT, `tuneRF()` for RF, a grid over `nrounds`/`max_depth`/`eta` for XGBoost, and Laplace smoothing for NB. KNN required no additional tuning ($k = \lfloor\sqrt{p}\rfloor$ set by rule). All code is folded below; a unified before/after comparison appears at the end of the section.
+Each model's primary hyperparameter was tuned using the same 5-fold CV framework from Section 4: L2 weight decay for LR, CP pruning for DT, `tuneRF()` for RF, a grid over `nrounds`/`max_depth`/`eta` for XGBoost, and Laplace smoothing for NB. KNN required no additional tuning ($k = \lfloor\sqrt{p}\rfloor$ set by rule). All code is folded below, with a unified before/after comparison at the end of the section.
 
 #### 6.1 Logistic Regression - L2 decay tuning
 
@@ -1610,7 +1606,8 @@ p_xgb_tune_curve <- xgb_tune_results %>%
   scale_fill_brewer(palette = "Blues", direction = 1) +
   labs(title = "XGBoost Tuning: Mean-F1 by Depth & Learning Rate",
        x = "max_depth", y = "Validation Mean-F1", fill = "Learning rate") +
-  theme_minimal(base_size = 12)
+  theme_minimal(base_size = 12) +
+  theme(plot.title = element_text(size = 10))
 
 dir.create("plots", showWarnings = FALSE)
 
@@ -1933,7 +1930,7 @@ knitr::kable(
   col.names = c("Model", "Tuning Method",
                 "Base Macro-F1", "Tuned Macro-F1",
                 "Base Fatal Recall", "Tuned Fatal Recall"),
-  caption = "Table: Hyperparameter Tuning Summary - Before vs After"
+  caption = "Table 6: Hyperparameter Tuning Summary - Before vs After"
 ) |>
   kableExtra::kable_styling(
     full_width = FALSE,
@@ -1955,11 +1952,11 @@ plot_grid(p_lr_tune, p_dt_tune, p_rf_tune,
 
 **Tuning outcomes by model:**
 
-- **Logistic Regression:** Best decay = `r best_decay`; the tuning curve shows a clear peak at this value with performance dropping at both lower (no regularisation, overfitting) and higher (over-penalised, underfitting) decay values. Fatal Recall improves marginally while Macro-F1 is essentially unchanged — LR is already well-regularised by SMOTE inside CV folds
-- **Decision Tree:** CV error decreases steadily with more splits before flattening; best CP = `r signif(best_cp, 3)` selected at the elbow. Pruning prevents the deep tree from over-fitting to the balanced training set — Macro-F1 improves by +`r round(macro_f1_dt_tuned - macro_f1_dt, 3)` and Fatal Recall by +`r round(fatal_recall_dt_tuned - fatal_recall_dt, 3)`, the largest relative gain of the parametric models
+- **Logistic Regression:** Best decay = `r best_decay`, with the tuning curve showing a clear peak at this value with performance dropping at both lower (no regularisation, overfitting) and higher (over-penalised, underfitting) decay values. Fatal Recall improves marginally while Macro-F1 is essentially unchanged, as LR is already well-regularised by SMOTE inside CV folds
+- **Decision Tree:** CV error decreases steadily with more splits before flattening, with best CP = `r signif(best_cp, 3)` selected at the elbow. Pruning prevents the deep tree from over-fitting to the balanced training set, with Macro-F1 improving by +`r round(macro_f1_dt_tuned - macro_f1_dt, 3)` and Fatal Recall by +`r round(fatal_recall_dt_tuned - fatal_recall_dt, 3)`, the largest relative gain among the parametric models
 - **Random Forest:** The largest absolute improvement of any model - increasing `mtry` from `r floor(sqrt(ncol(rf_x_train)))` to `r best_mtry` lifted Macro-F1 by +0.007 and pushed Fatal Recall from `r round(as.numeric(fatal_recall_rf), 3)` to `r round(as.numeric(fatal_recall_tuned), 3)`, clearing the 0.50 safety floor. The OOB error curve confirms stability at 100 trees
-- **XGBoost:** All six grid combinations cluster tightly in the 0.27-0.30 Macro-F1 range with no setting producing Fatal Recall ≥ 0.50; depth and learning rate have minimal effect on the structural limitation (poor Fatal class separation under OHE + inverse-frequency weighting)
-- **KNN:** No tuning performed; $k = \lfloor\sqrt{p}\rfloor$ rule used (see Section 6.5)
+- **XGBoost:** All six grid combinations cluster tightly in the 0.27-0.30 Macro-F1 range with no setting producing Fatal Recall ≥ 0.50, and depth and learning rate have minimal effect on the structural limitation (poor Fatal class separation under OHE + inverse-frequency weighting)
+- **KNN:** No tuning performed, $k = \lfloor\sqrt{p}\rfloor$ rule used (see Section 6.5)
 - **Naive Bayes:** Flat log-loss curve across Laplace values confirms the bottleneck is model assumption violation, not hyperparameter choice
 
 ------------------------------------------------------------------------
@@ -1982,7 +1979,7 @@ metric_defs <- data.frame(
     "Cross-check: robust to class imbalance; near-zero = near-random"
   )
 )
-knitr::kable(metric_defs, caption = "Table: Evaluation Metric Definitions") |>
+knitr::kable(metric_defs, caption = "Table 7: Evaluation Metric Definitions") |>
   kableExtra::kable_styling(full_width = TRUE,
                             bootstrap_options = c("condensed"), font_size = 11) |>
   kableExtra::row_spec(0, bold = TRUE, background = "#2E74B5", color = "white") |>
@@ -2031,7 +2028,7 @@ sel_tbl <- data.frame(
 selected_row <- which(sel_tbl$Decision == "Selected")
 
 knitr::kable(sel_tbl, align = c("l", "r", "r", "r", "r", "c", "l"),
-             caption = "Table: Model Selection - Tuned Performance and Decision") |>
+             caption = "Table 8: Model Selection - Tuned Performance and Decision") |>
   kableExtra::kable_styling(full_width = TRUE,
                             bootstrap_options = c("condensed"), font_size = 12) |>
   kableExtra::row_spec(0, bold = TRUE, background = "#2E74B5", color = "white") |>
@@ -2071,7 +2068,7 @@ plot_grid(p_lr_tuned_cm, p_dt_tuned_cm, p_rf_tuned_cm,
 - **RF (tuned):** The diagonal is now the dominant cell in every row - Fatal, Injury, and Non-casualty predictions each concentrate on the correct class. This is the most balanced CM in the grid and directly reflects the high Macro-F1 (`r round(as.numeric(macro_f1_tuned), 3)`) and cleared Fatal Recall floor (`r round(as.numeric(fatal_recall_tuned), 3)`)
 - **KNN:** Similar diagonal structure to RF but with weaker separation on Non-casualty - KNN over-predicts Injury for many Non-casualty instances, explaining the ~`r round(as.numeric(macro_f1_tuned) - macro_f1_knn, 2)` Macro-F1 gap relative to RF
 - **LR & DT (tuned):** Tuning made no structural change to the prediction pattern - the Fatal predicted row continues to absorb large proportions of Injury and Non-casualty instances. Both models remain high-recall safety nets, not balanced classifiers
-- **XGBoost (tuned):** Predictions are spread roughly equally across all three rows but with very low accuracy in each — Kappa (`r round(kappa_xgb_tuned, 3)`) confirms near-random three-class discrimination regardless of the predicted class
+- **XGBoost (tuned):** Predictions are spread roughly equally across all three rows but with very low accuracy in each, with Kappa (`r round(kappa_xgb_tuned, 3)`) confirming near-random three-class discrimination regardless of the predicted class
 - **NB (tuned):** High Fatal Recall (`r round(as.numeric(fatal_recall_nb_tuned), 3)`) but the Injury predicted row is severely under-populated - most Injury instances are pushed to Non-casualty. This directly explains the lowest Weighted F1 (`r round(weighted_f1_nb_tuned, 3)`) and Kappa (`r round(as.numeric(kappa_nb_tuned), 3)`) of all tuned models
 
 ------------------------------------------------------------------------
@@ -2247,7 +2244,7 @@ ggsave(
 knitr::kable(
   rf_2024_metrics,
   col.names = c("Model", "Macro-F1", "Fatal Recall", "Weighted F1", "Kappa"),
-  caption = "Table 3: Tuned Random Forest - 2024 Temporal Holdout Performance"
+  caption = "Table 9: Tuned Random Forest - 2024 Temporal Holdout Performance"
 ) |>
   kableExtra::kable_styling(full_width = FALSE,
                             bootstrap_options = c("striped", "condensed"),
@@ -2276,15 +2273,15 @@ plot_grid(p_rf_2024_cm, p_varimp_final, ncol = 2, rel_widths = c(1, 1.2))
 
 **Holdout performance (2024 unseen data):**
 
-- Fatal Recall collapsed from `r round(as.numeric(fatal_recall_tuned), 3)` (test set) to `r round(as.numeric(fatal_recall_2024), 3)` - only `r round(as.numeric(fatal_recall_2024) * 100, 1)`% of actual Fatal crashes correctly identified; the rest were misclassified as Injury
-- Macro-F1 fell from `r round(as.numeric(macro_f1_tuned), 3)` to `r round(macro_f1_2024, 3)`; Kappa dropped to `r round(as.numeric(kappa_2024), 3)` (near-chance agreement)
+- Fatal Recall collapsed from `r round(as.numeric(fatal_recall_tuned), 3)` (test set) to `r round(as.numeric(fatal_recall_2024), 3)` - only `r round(as.numeric(fatal_recall_2024) * 100, 1)`% of actual Fatal crashes correctly identified, with the rest misclassified as Injury
+- Macro-F1 fell from `r round(as.numeric(macro_f1_tuned), 3)` to `r round(macro_f1_2024, 3)`, with Kappa dropping to `r round(as.numeric(kappa_2024), 3)` (near-chance agreement)
 - Weighted F1 (`r round(weighted_f1_2024, 3)`) is deceptively high - the model predicts Injury for almost everything, and Injury dominates the 2024 holdout
 
 **Why generalisation failed:**
 
-- **Temporal distribution shift** - training used a balanced set (1:10:10 ratio) but 2024 holdout reflects the natural ~1:47:23 distribution; decision boundaries trained on the balanced set do not transfer
+- **Temporal distribution shift** - training used a balanced set (1:10:10 ratio) but 2024 holdout reflects the natural ~1:47:23 distribution, and decision boundaries trained on the balanced set do not transfer
 - **Top predictors are time-sensitive** - Street lighting, LGA, and Key TU type shift with infrastructure upgrades and reporting practice changes year-on-year
-- **No recalibration** - predicted probabilities were not threshold-calibrated for the Fatal class; the default 0.33 threshold is too high given 1.4% natural prevalence
+- **No recalibration** - predicted probabilities were not threshold-calibrated for the Fatal class, with the default 0.33 threshold being too high given 1.4% natural prevalence
 
 **Variable importance findings:**
 
@@ -2326,4 +2323,4 @@ Given environmental conditions and traffic unit characteristics, can we predict 
 
 #### Acknowledgement of AI
 
-<p style="font-size:14px;">Group 07 (Workshop 12) declares that we used ChatGPT (GPT-5.3, OpenAI, https://chatgpt.com) and Claude Sonnet 4.5 (Anthropic, https://claude.ai) for code refinement, grammar checking, making informed coding decisions, and writing and reviewing report content against the marking rubric. The authors retain full understanding of all decisions made with AI assistance.</p>
+<p style="font-size:14px;">Group 07 (Workshop 12) declares that we used ChatGPT (GPT-5.3, OpenAI, https://chatgpt.com) and Claude Sonnet 4.5 (Anthropic, https://claude.ai) for code refinement, grammar checking, making informed coding decisions, and reviewing report content against the marking rubric. The authors retain full understanding of all decisions made with AI assistance.</p>
